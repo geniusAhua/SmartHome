@@ -43,7 +43,131 @@ class Router:
         with patch_stdout():
             if self.__echo_tag == 1:
                 print(msg)
+    
+    # process the msg for the target
+    '''def __handle_HANDSHAKE'''
+    async def __handle_HANDSHAKE(self, packet, from_name, from_ws):
+        clientName = packet
+        if clientName not in self.__connections:
+            if not from_name:
+                from_name += [clientName]
+            else:
+                # Means this connection wants to change its name
+                self.__connections.pop(from_name[0], None)
+                self.__PIT.delete_pit_with_outface(from_name[0])
+                from_name[0] = clientName
+            
+            # save the connection
+            self.__connections[clientName] = from_ws
+            #send handshake message
+            handshake_msg = SendFormat.send_(SendFormat.HANDSHAKE, "success")
+            await from_ws.send(handshake_msg)
+            self.__echo(f"[{clientName}] connect to this router successfully")
+            return True
+        else:
+            err_msg = SendFormat.send_(SendFormat.E_SHAKEHAND, 'clientName already exists')
+            await from_ws.send(err_msg)
+            self.__echo(f"[{clientName}] already connected to this router")
+            return False
+    '''def __handle_HANDSHAKE'''
+
+    '''def __handle_INTEREST'''
+    async def __send_data_if_exist(self, packet, dataName, fromName, from_ws):
+        fileName = dataName.split("/")[-1]
+        # Always get the newest data if receives these packets
+        if fileName == ".debug":
+            self.__echo(f"[{self.__nodeName}] received a .debug INTEREST from {fromName}, so doesn't check the CS")
+            return False
+        elif fileName == ".data":
+            self.__echo(f"[{self.__nodeName}] received a .data INTEREST from {fromName}, so doesn't check the CS")
+            return False
         
+        if self.__CS.isExist(dataName):
+            async with self.__CS_lock:
+                data = self.__CS.find_item(dataName)
+            formatDataPacket = SendFormat.send_(SendFormat.DATA, f"{packet}//{data}")
+            self.__echo(f"[{self.__nodeName}] has the data and trans back to {fromName} ::: {formatDataPacket}")
+            await from_ws.send(formatDataPacket)
+            return True
+        return False
+    
+    async def __add_to_pit_if_exists(self, dataName, fromName):
+        if self.__PIT.isExist(dataName):
+            self.__echo(f"[{self.__nodeName}] find the {dataName} in PIT and add it")
+            async with self.__PIT_lock:
+                self.__PIT.add_pit_item(dataName, fromName)
+            return True
+        return False
+
+    async def __forward_interest_then_add_pit(self, dataName, fromName, to_ws):
+        transform_msg = SendFormat.send_(SendFormat.INTEREST, dataName)
+        self.__echo(f"[{self.__nodeName}] forward interest to {fromName} ::: {transform_msg}")
+        await to_ws.send(transform_msg)
+        async with self.__PIT_lock:
+            self.__PIT.add_pit_item(dataName, fromName)
+        return
+    
+    async def __respond_to_interest_with_default_data(self, packet, fileName, fromName, from_ws):
+        if fileName == ".debug":
+            self.__echo(f"[{self.__nodeName}] received debug packet from {fromName}")
+            await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{packet}//debugPacket"))
+            return True
+        elif fileName == ".CLIENTHELLO":
+            self.__echo(f"[{self.__nodeName}] received CLIENTHELLO packet from {fromName}")
+            # TODO
+            return True
+        return False
+
+    async def __handle_INTEREST(self, packet, fromName, from_ws, portType = PortType.LAN):
+        # Packet: INTEREST://targetName/DeviceNDNName/fileName//params
+        target = packet.split("/", 1)
+        dataName = None
+        forward_ws = None
+        # wrong packet
+        if len(target) < 2:
+            return
+        
+        if target[0] == self.__nodeName:
+            # return a debug packet
+            if await self.__respond_to_interest_with_default_data(packet, target[1], fromName, from_ws):
+                return
+        
+        #Check if the packet is from WAN
+        # Packet: INTEREST://targetName/DeviceNDNName/fileName//params
+        if portType == PortType.WAN:
+            if target[0] != self.__nodeName:
+                self.__echo(f"[{self.__nodeName}] can't handle the packet from WAN. The targetName is {target[0]}")
+                return
+            NDNName = target[1].split("//")[0]
+            subNDNName = NDNName
+            if NDNName in self.__NDN_map:
+                subNDNName = self.__NDN_map[NDNName]
+            if subNDNName in self.__connections[PortType.LAN]:
+                forward_ws = self.__connections[PortType.LAN][subNDNName]
+            else:
+                self.__echo(f"[{self.__nodeName}] can't find the target [{subNDNName}]")
+                return
+            dataName = subNDNName + "/".join(target[2:])
+
+        # Check if the packet is from LAN
+        # Packet: INTEREST://DeviceNDNName/fileName
+        elif portType == PortType.LAN:
+            dataName = packet
+            targetName = target[0]
+            if targetName in self.__connections[PortType.LAN]:
+                forward_ws = self.__connections[PortType.LAN][targetName]
+            else:
+                forward_ws = self.__connections[PortType.WAN][self.__WAN_target]
+        
+        if await self.__send_data_if_exist(packet, dataName, fromName, from_ws):
+            return
+        if await self.__add_to_pit_if_exists(dataName, fromName):
+            return
+        # forward interest
+        await self.__forward_interest_then_add_pit(dataName, fromName, forward_ws)
+        return
+    '''def __handle_INTEREST'''
+
     # transform the msg to the target
     '''def __transform_msg'''
     async def __transform_msg(self, msg, from_name, from_ws):
@@ -53,35 +177,7 @@ class Router:
         packet = packet[1]
 
         try:
-            if pktHeader == SendFormat.HANDSHAKE:
-                clientName = packet
-                if clientName not in self.__connections:
-                    if not from_name:
-                        from_name += [clientName]
-                    else:
-                        self.__connections.pop(from_name[0], None)
-                        self.__FIB.delete_nexthop_fib(from_name[0])
-                        self.__PIT.delete_pit_with_outface(from_name[0])
-                        from_name[0] = clientName
-                    
-                    self.__connections[clientName] = from_ws
-                    #send handshake message
-                    handshake_msg = SendFormat.send_(SendFormat.HANDSHAKE, "success")
-                    await from_ws.send(handshake_msg)
-                    self.__echo(f"[{clientName}] connect to this router successfully")
-                    self.__FIB.add_nexthop_fib(clientName)
-                    return
-                else:
-                    err_msg = SendFormat.send_(SendFormat.E_SHAKEHAND, 'clientName already exists')
-                    await from_ws.send(err_msg)
-                    self.__echo(f"[{clientName}] already connected to this router")
-                    return
-            # check if the ws has a name
-            elif not from_name:
-                await from_ws.send(SendFormat.send_(SendFormat.E_SHAKEHAND, 'please send handshake message first'))
-                return
-
-            elif pktHeader == SendFormat.INTEREST:
+            if pktHeader == SendFormat.INTEREST:
                 target = packet.split("/")
                 # wrong packet
                 if len(target) < 2: return
@@ -155,8 +251,17 @@ class Router:
                     self.__echo(f"get a message: '{message}'")
                 else:
                     self.__echo(f"[{clientName[0]}] send '{message}'")
-                # transform message
-                await self.__transform_msg(message, clientName, ws)
+                
+                header, packet = message.split("://", 1)
+                if header == SendFormat.HANDSHAKE:
+                    # HANDSHAKE://clientName
+                    await self.__handle_HANDSHAKE(packet, clientName, ws)
+                elif not clientName:
+                    self.__echo(f"Can't know the name of this connection. Please send handshake message first")
+                    await ws.send(SendFormat.send_(SendFormat.E_SHAKEHAND, 'please send handshake message first'))
+                else:
+                    # process and transform message
+                    await self.__transform_msg(message, clientName[0], ws)
 
         except websockets.exceptions.ConnectionClosedError:
             pass

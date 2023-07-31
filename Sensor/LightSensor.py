@@ -32,32 +32,40 @@ class Sensor:
         
     # process the msg
     '''def __handle_INTEREST'''
-    async def __respond_to_interest_with_data(self, _packet, _fileName, fromName, from_ws):
+    async def __respond_to_interest_with_data(self, dataName, _fileName, params, fromName, from_ws):
         # Packet: INTEREST://NDNName/file//data1//data2//...
-        fileName = _fileName.split("//", 1)[0]
-        packet = _packet.split("//", 1)[0]
+        fileName = _fileName
+        
         if fileName == ".debug":
             self.__echo(f"[{self.__nodeName}] received <debug> packet from {fromName}")
-            await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{packet}//debugPacket"))
+            await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{dataName}//debugPacket"))
             return True
         elif fileName == ".data":
             self.__echo(f"[{self.__nodeName}] received <.data> packet from {fromName}")
             sensorData = {}
             sensorData["brightness"] = self.__brightness
             _json_obj = json.dumps(sensorData)
-            await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{packet}//{_json_obj}"))
+            await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}"))
             return True
         return False
 
     async def __handle_INTEREST(self, packet, fromName, from_ws):
-        # Packet: INTEREST://NDNName/file
-        target = packet.split("/")
+        # Packet: INTEREST://NDNName/file//MustBeFresh//data1//data2//...
+        otherList = packet.split("//")
+        fileURL = otherList[0]
+        freshToken = otherList[1]
+        # params is a list
+        params = None if len(otherList) < 3 else otherList[2:]
+        targetList = fileURL.split("/")
         # wrong packet
-        if len(target) < 2: return
+        if targetList[0] != self.__nodeName:
+            return
+        if len(targetList) < 2:
+            return
         
-        if target[0] == self.__nodeName:
+        if targetList[-2] == self.__nodeName and targetList[0] == targetList[-2]:
             # return a debug packet
-            if await self.__respond_to_interest_with_data(packet, target[1], fromName, from_ws):
+            if await self.__respond_to_interest_with_data(fileURL, targetList[-1], params, fromName, from_ws):
                 return
         self.__echo(f"[{self.__nodeName}] can't handle this INTEREST ==> {packet}")
         return
@@ -87,7 +95,7 @@ class Sensor:
                 return
                         
         except Exception as e:
-            self.__echo(f'An error occurred: {e}')
+            self.__echo(f'An error occurred in __transform_msg: {traceback.print_exc()}')
             return
     '''def __transform_msg'''
 
@@ -177,7 +185,7 @@ class Sensor:
     
     async def sendDebug(self, target):
         ws = self.__ws
-        await ws.send(SendFormat.send_(SendFormat.INTEREST, f"{target}/.debug"))
+        await ws.send(SendFormat.send_(SendFormat.INTEREST, f"{target}/.debug//T"))
 
         return
 

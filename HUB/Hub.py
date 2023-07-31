@@ -91,51 +91,54 @@ class Router:
     # process the msg for the target
     '''def __handle_HANDSHAKE'''
     async def __handle_HANDSHAKE(self, packet, from_name, from_ws, portType = PortType.LAN):
-        if from_name is not None:
-            # Check if the packet is from LAN
-            if portType == PortType.LAN:
-                clientName, sensorType = packet.split("//")
-                if clientName not in self.__connections[portType.LAN]:
-                    if not from_name:
-                        from_name += [clientName]
-                    else:
-                        self.__connections[PortType.LAN].pop(from_name[0], None)
-                        self.__PIT.delete_pit_with_outface(from_name[0])
-                        from_name[0] = clientName
-                    
-                    # add NDN adress to NDN_map and websocket to connections
-                    await self.__serve_LAN_port(from_ws, clientName, sensorType)
-                    #send handshake message
-                    handshake_msg = SendFormat.send_(SendFormat.HANDSHAKE, "success")
-                    await from_ws.send(handshake_msg)
-                    self.__echo(f"[{clientName}] connect to this router successfully")
-                    return True
+        # Check if the packet is from LAN
+        if portType == PortType.LAN:
+            clientName, sensorType = packet.split("//")
+            if clientName not in self.__connections[portType.LAN]:
+                if not from_name:
+                    from_name += [clientName]
                 else:
-                    err_msg = SendFormat.send_(SendFormat.E_SHAKEHAND, 'clientName already exists')
-                    await from_ws.send(err_msg)
-                    self.__echo(f"[{clientName}] already connected to this router")
-                    return False
-            # Check if the packet is from WAN
-            elif portType == PortType.WAN:
-                self.__echo(f"Can't handle a handshake packet from WAN")
+                    self.__connections[PortType.LAN].pop(from_name[0], None)
+                    self.__PIT.delete_pit_with_outface(from_name[0])
+                    from_name[0] = clientName
+                
+                # add NDN adress to NDN_map and websocket to connections
+                await self.__serve_LAN_port(from_ws, clientName, sensorType)
+                #send handshake message
+                handshake_msg = SendFormat.send_(SendFormat.HANDSHAKE, "success")
+                await from_ws.send(handshake_msg)
+                self.__echo(f"[{clientName}] connect to this router successfully")
+                return True
+            else:
+                err_msg = SendFormat.send_(SendFormat.E_SHAKEHAND, 'clientName already exists')
+                await from_ws.send(err_msg)
+                self.__echo(f"[{clientName}] already connected to this router")
                 return False
+        # Check if the packet is from WAN
+        elif portType == PortType.WAN:
+            self.__echo(f"Can't handle a handshake packet from WAN")
+            return False
     '''def __handle_HANDSHAKE'''
 
     '''def __handle_INTEREST'''
-    async def __send_data_if_exist(self, packet, dataName, fromName, from_ws):
-        fileName = dataName.split("/")[-1]
+    async def __send_data_if_exist(self, packet, dataName, freshToke, fromName, from_ws, originalDataName = None):
+        self.__echo(f"for debug: packet: {packet}")
+        if freshToke == "T":
+            self.__echo(f"[{self.__nodeName}] received a MustBeFresh INTEREST from {fromName}, so doesn't check the CS")
+            return
         # Always get the newest data if receives these packets
-        if fileName == ".debug":
-            self.__echo(f"[{self.__nodeName}] received a .debug INTEREST from {fromName}, so doesn't check the CS")
-            return False
-        elif fileName == ".data":
-            self.__echo(f"[{self.__nodeName}] received a .data INTEREST from {fromName}, so doesn't check the CS")
-            return False
+        #if fileName == ".debug":
+        #    self.__echo(f"[{self.__nodeName}] received a .debug INTEREST from {fromName}, so doesn't check the CS")
+        #    return False
+        #elif fileName == ".data":
+        #    self.__echo(f"[{self.__nodeName}] received a .data INTEREST from {fromName}, so doesn't check the CS")
+        #    return False
         
         if self.__CS.isExist(dataName):
             async with self.__CS_lock:
                 data = self.__CS.find_item(dataName)
-            formatDataPacket = SendFormat.send_(SendFormat.DATA, f"{packet}//{data}")
+            # if trans back to WAN, we need to transform the name of DATA
+            formatDataPacket = SendFormat.send_(SendFormat.DATA, f"{dataName if not originalDataName else originalDataName}//{data}")
             self.__echo(f"[{self.__nodeName}] has the data and trans back to {fromName} ::: {formatDataPacket}")
             await from_ws.send(formatDataPacket)
             return True
@@ -149,8 +152,8 @@ class Router:
             return True
         return False
 
-    async def __forward_interest_then_add_pit(self, dataName, fromName, to_ws):
-        transform_msg = SendFormat.send_(SendFormat.INTEREST, dataName)
+    async def __forward_interest_then_add_pit(self, dataName, freshToken, params, fromName, to_ws):
+        transform_msg = SendFormat.send_(SendFormat.INTEREST, f"{dataName}//{freshToken}{'//'+'//'.join(params) if params else ''}")
         self.__echo(f"[{self.__nodeName}] forward interest to {fromName} ::: {transform_msg}")
         await to_ws.send(transform_msg)
         async with self.__PIT_lock:
@@ -169,53 +172,63 @@ class Router:
         return False
 
     async def __handle_INTEREST(self, packet, fromName, from_ws, portType = PortType.LAN):
-        # Packet: INTEREST://targetName/DeviceNDNName/fileName//params
-        target = packet.split("/", 1)
-        dataName = None
-        forward_ws = None
-        # wrong packet
-        if len(target) < 2:
-            return
-        
-        if target[0] == self.__nodeName:
-            # return a debug packet
-            if await self.__respond_to_interest_with_default_data(packet, target[1], fromName, from_ws):
+        try:
+            # Packet: INTEREST://targetName/DeviceNDNName/fileName//MustBeFresh//params
+            otherList = packet.split("//")
+            fileURL = otherList[0]
+            freshToken = otherList[1]
+            # params is a list
+            params = [] if len(otherList) < 3 else otherList[2:]
+            targetList = fileURL.split("/")
+            dataName = None
+            forward_ws = None
+            originalDataName = None
+            # wrong packet
+            if portType == PortType.WAN and targetList[0] != self.__nodeName:
                 return
-        
-        #Check if the packet is from WAN
-        # Packet: INTEREST://targetName/DeviceNDNName/fileName//params
-        if portType == PortType.WAN:
-            if target[0] != self.__nodeName:
-                self.__echo(f"[{self.__nodeName}] can't handle the packet from WAN. The targetName is {target[0]}")
+            if len(targetList) < 2:
                 return
-            NDNName = target[1].split("//")[0]
-            subNDNName = NDNName
-            if NDNName in self.__NDN_map:
-                subNDNName = self.__NDN_map[NDNName]
-            if subNDNName in self.__connections[PortType.LAN]:
-                forward_ws = self.__connections[PortType.LAN][subNDNName]
-            else:
-                self.__echo(f"[{self.__nodeName}] can't find the target [{subNDNName}]")
-                return
-            dataName = subNDNName + "/".join(target[2:])
+            
+            if targetList[-2] == self.__nodeName:
+                # return a debug packet
+                if await self.__respond_to_interest_with_default_data(packet, targetList[-1], fromName, from_ws):
+                    return
+            
+            #Check if the packet is from WAN
+            # Packet: INTEREST://targetName/DeviceNDNName/fileName//MustBeFresh//params
+            self.__echo(f"for debug: portType: {portType}")
+            if portType == PortType.WAN:
+                NDNName = targetList[1]
+                subNDNName = NDNName
+                originalDataName = fileURL
+                if NDNName in self.__NDN_map:
+                    subNDNName = self.__NDN_map[NDNName]
+                if subNDNName in self.__connections[PortType.LAN]:
+                    forward_ws = self.__connections[PortType.LAN][subNDNName]
+                else:
+                    self.__echo(f"[{self.__nodeName}] can't find the target [{subNDNName}]")
+                    return
+                dataName = subNDNName + "/".join(targetList[2:])
 
-        # Check if the packet is from LAN
-        # Packet: INTEREST://DeviceNDNName/fileName
-        elif portType == PortType.LAN:
-            dataName = packet
-            targetName = target[0]
-            if targetName in self.__connections[PortType.LAN]:
-                forward_ws = self.__connections[PortType.LAN][targetName]
-            else:
-                forward_ws = self.__connections[PortType.WAN][self.__WAN_target]
-        
-        if await self.__send_data_if_exist(packet, dataName, fromName, from_ws):
+            # Check if the packet is from LAN
+            # Packet: INTEREST://DeviceNDNName/fileName//MustBeFresh//params
+            elif portType == PortType.LAN:
+                dataName = fileURL
+                targetName = targetList[0]
+                if targetName in self.__connections[PortType.LAN]:
+                    forward_ws = self.__connections[PortType.LAN][targetName]
+                else:
+                    forward_ws = self.__connections[PortType.WAN][self.__WAN_target]
+            
+            if await self.__send_data_if_exist(dataName, freshToken, fromName, from_ws, originalDataName):
+                return
+            if await self.__add_to_pit_if_exists(dataName, fromName):
+                return
+            # forward interest
+            await self.__forward_interest_then_add_pit(dataName, freshToken, params, fromName, forward_ws)
             return
-        if await self.__add_to_pit_if_exists(dataName, fromName):
-            return
-        # forward interest
-        await self.__forward_interest_then_add_pit(dataName, fromName, forward_ws)
-        return
+        except Exception as e:
+            self.__echo(f"An error occurred in _handle_INTEREST: {traceback.print_exc()}")
     '''def __handle_INTEREST'''
 
     '''def __handle_DATA'''
@@ -288,7 +301,7 @@ class Router:
             self.__echo(f"Sorry, we can't send interest to the router")
             return
         else:
-            formatPacket = f"{targetName}/{fileName}"
+            formatPacket = f"{targetName}/{fileName}//T"
             # Use handle_INTEREST send Interest packet, because it can save the packet to PIT and transform it
             await self.__handle_INTEREST(formatPacket, self.__nodeName, ws, PortType.LAN)
             
@@ -423,10 +436,14 @@ class Router:
 
     async def getSensorData(self):
         while True:
-            if self.__connections[PortType.LAN]:
-                self.__echo("test test test")
-                for targetname, ws in self.__connections[PortType.LAN].items():
-                    await self.__send_interest(targetname, ws, ".data")
+            try:
+                if self.__connections[PortType.LAN]:
+                    self.__echo("Get Sensors Data ==>")
+                    for targetname, ws in self.__connections[PortType.LAN].items():
+                        await self.__send_interest(targetname, ws, ".data")
+            
+            except Exception as e:
+                self.__echo(f"An error happends in getSensorData() ==> {traceback.print_exc()}")
                 
             await asyncio.sleep(5)
 
@@ -459,12 +476,12 @@ class Router:
     async def sendDebug(self, target):
         if target == self.__WAN_target:
             ws = self.__connections[PortType.WAN][target]
-            await ws.send(SendFormat.send_(SendFormat.INTEREST, f"{target}/.debug"))
+            await ws.send(SendFormat.send_(SendFormat.INTEREST, f"{target}/.debug//T"))
 
         else:
             if target in self.__connections[PortType.LAN]:
                 ws = self.__connections[PortType.LAN][target]
-                await ws.send(SendFormat.send_(SendFormat.INTEREST, f"{target}/.debug"))
+                await ws.send(SendFormat.send_(SendFormat.INTEREST, f"{target}/.debug//T"))
         return
 
 
@@ -640,7 +657,7 @@ class Demo:
                 except (EOFError):
                     return
         except Exception as e:
-            print(f'An error occurred: {e}')
+            print(f'An error occurred: {traceback.print_exc()}')
 
     async def __main(self):
         with patch_stdout():
