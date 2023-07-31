@@ -1,0 +1,306 @@
+div.entry-page{
+    width: 100%;
+    height: 100%;
+    background-color: #f2f2f2;
+}
+
+div.backgrd-img{
+    width: 100%;
+    height: 100%;
+    min-width: 350px;
+    min-height: 380px;
+    z-index: 0;
+    background: url(../../IMG/green1.jpg), url(../../IMG/green2.jpg), url(../../IMG/green3.jpg), url(../../IMG/green4.jpg), url(../../IMG/green5.jpg);
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    background-size: auto 100%;
+    animation: zoomOut 20s infinite linear;
+    -webkit-animation: zoomOut 20s infinite linear;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transform-style: preserve-3d;
+    -webkit-transform-style: preserve-3d;
+}
+
+div.form-container{
+    width: 100%;
+    padding: 0 15px 0 15px;
+    max-width: 600px;
+    min-width: 320px;
+    left: 50%;
+    top: -50%;
+    position: relative;
+    transform: translate(-50%, calc(-50% - 5px));
+}
+
+
+div.glassmorphism{
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    margin: auto;
+    background-image: linear-gradient(135deg, rgba(245,247,250,0.2) 0%, rgba(195,207,226,0.3) 100%);
+    backdrop-filter: blur(10px);
+    border-top: rgba(165, 165, 165, 0.4) solid 1px;
+    border-left: rgba(165, 165, 165, 0.4) solid 1px;
+    padding: 10px;
+    border-radius: 25px;
+    box-shadow: 5px 5px 15px 0 rgba(0,0,0,0.7);
+}
+
+.title-style{
+    font-weight: bolder;
+    color: #a8ede9;
+    text-align: center;
+    margin-bottom: 10px;
+    padding: 0;
+    text-shadow: 2px 2px 5px #354b4a !important;
+}
+
+.entry-page__title{
+    font-size: 2.5rem;
+}
+
+.entry-page__subtitle{
+    font-size: 1rem;
+    color:#fed6e3;
+}
+
+.entry-page__form{
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+    margin: 10px 10px 10px 10px;
+}
+
+.entry-input{
+    background-color: rgba(0,0,0,0.5) !important;
+    border: none !important;
+    color: #a8ede9 !important;
+}
+.entry-input::placeholder{
+    color: #a8ede9 !important;
+}
+
+.input-label{
+    width: 100%;
+    text-align: left;
+    /*background-image: linear-gradient(-225deg, #231557 0%, #44107A 29%, #FF1361 67%, #FFF800 100%);*/
+    background-image: linear-gradient(-20deg, #b721ff 0%, #21d4fd 100%);
+    background-clip: text;
+    color: transparent;
+    font-weight: bolder;
+}
+
+
+    /* Animation - change background pictures - zoom in, zoom out*/
+@-webkit-keyframes zoomOut{
+    0%{
+        -webkit-opacity: 0.8;
+        -webkit-background-image: url(../../IMG/green1.jpg);
+        -webkit-background-size: auto 100%;
+    }
+    5%{
+        -webkit-opacity: 1;
+        -webkit-background-image: url(../../IMG/green1.jpg);
+
+    }
+    15%{
+        -webkit-opacity: 1;
+        -webkit-background-image: url(../../IMG/green1.jpg);
+        -webkit-background-size: auto 150%;
+    }
+    19%{
+        -webkit-background-image: url(../../IMG/green1.jpg);
+        -webkit-opacity: 0.8;
+        -webkit-background-size: auto 150%;
+    }
+    20%{
+        -webkit-opacity: 0.8;
+        -webkit-background-image: url(../../IMG/green2.jpg);
+        -webkit-background-size: auto 100%;
+    }
+    25%{
+        -webkit-opacity: 1;
+        -webkit-background-image: url(../../IMG/green2.jpg);
+    }
+    35%{
+        -webkit-opacity: 1;
+        -webkit-background-image: url(../../IMG/green2.jpg);
+        -webkit-background-size: auto 150%;
+    }
+    39%{
+        -webkit-opacity: 0.8;
+        -webkit-background-image: url(../../IMG/green2.jpg);
+        -webkit-background-size: auto 150%;
+    }
+    40%{
+        -webkit-opacity: 0.8;
+        -webkit-background-image: url(../../IMG/green3.jpg);
+        -webkit-background-size: auto 100%;
+    }
+    45%{
+        -webkit-opacity: 1;
+        -webkit-background-image: url(../../IMG/green3.jpg);
+    }
+    55%{
+        -webkit-opacity: 1;
+        -webkit-background-image: url(../../IMG/green3.jpg);
+        -webkit-background-size: auto 150%;
+    }
+    59%{
+        -webkit-opacity: 0.8;
+        -webkit-background-image: url(../../IMG/green3.jpg);
+        -webkit-background-size: auto 150%;
+    }
+    60%{
+        -webkit-opacity: 0.8;
+        -webkit-background-image: url(../../IMG/green4.jpg);
+        -webkit-background-size: auto 100%;
+    }
+    65%{
+        -webkit-opacity: 1;
+        -webkit-background-image: url(../../IMG/green4.jpg);
+    }
+    75%{
+        -webkit-opacity: 1;
+        -webkit-background-image: url(../../IMG/green4.jpg);
+        -webkit-background-size: auto 150%;
+    }
+    79%{
+        -webkit-opacity: 0.8;
+        -webkit-background-image: url(../../IMG/green4.jpg);
+        -webkit-background-size: auto 150%;
+    }
+    80%{
+        -webkit-opacity: 0.8;
+        -webkit-background-image: url(../../IMG/green5.jpg);
+        -webkit-background-size: auto 100%;
+    }
+    85%{
+        -webkit-opacity: 1;
+        -webkit-background-image: url(../../IMG/green5.jpg);
+    }
+    95%{
+        -webkit-opacity: 1;
+        -webkit-background-image: url(../../IMG/green5.jpg);
+        -webkit-background-size: auto 150%;
+    }
+    99%{
+        -webkit-opacity: 0.8;
+        -webkit-background-image: url(../../IMG/green5.jpg);
+        -webkit-background-size: auto 150%;
+    }
+    100%{
+        -webkit-opacity: 0.8;
+        -webkit-background-image: url(../../IMG/green1.jpg);
+        -webkit-background-size: auto 100%;
+    }
+}
+@keyframes zoomOut{
+    0%{
+        opacity: 0.8;
+        background-image: url(../../IMG/green1.jpg);
+        background-size: auto 100%;
+    }
+    5%{
+        opacity: 1;
+        background-image: url(../../IMG/green1.jpg);
+
+    }
+    15%{
+        opacity: 1;
+        background-image: url(../../IMG/green1.jpg);
+        background-size: auto 150%;
+    }
+    19%{
+        background-image: url(../../IMG/green1.jpg);
+        opacity: 0.8;
+        background-size: auto 150%;
+    }
+    20%{
+        opacity: 0.8;
+        background-image: url(../../IMG/green2.jpg);
+        background-size: auto 100%;
+    }
+    25%{
+        opacity: 1;
+        background-image: url(../../IMG/green2.jpg);
+    }
+    35%{
+        opacity: 1;
+        background-image: url(../../IMG/green2.jpg);
+        background-size: auto 150%;
+    }
+    39%{
+        opacity: 0.8;
+        background-image: url(../../IMG/green2.jpg);
+        background-size: auto 150%;
+    }
+    40%{
+        opacity: 0.8;
+        background-image: url(../../IMG/green3.jpg);
+        background-size: auto 100%;
+    }
+    45%{
+        opacity: 1;
+        background-image: url(../../IMG/green3.jpg);
+    }
+    55%{
+        opacity: 1;
+        background-image: url(../../IMG/green3.jpg);
+        background-size: auto 150%;
+    }
+    59%{
+        opacity: 0.8;
+        background-image: url(../../IMG/green3.jpg);
+        background-size: auto 150%;
+    }
+    60%{
+        opacity: 0.8;
+        background-image: url(../../IMG/green4.jpg);
+        background-size: auto 100%;
+    }
+    65%{
+        opacity: 1;
+        background-image: url(../../IMG/green4.jpg);
+    }
+    75%{
+        opacity: 1;
+        background-image: url(../../IMG/green4.jpg);
+        background-size: auto 150%;
+    }
+    79%{
+        opacity: 0.8;
+        background-image: url(../../IMG/green4.jpg);
+        background-size: auto 150%;
+    }
+    80%{
+        opacity: 0.8;
+        background-image: url(../../IMG/green5.jpg);
+        background-size: auto 100%;
+    }
+    85%{
+        opacity: 1;
+        background-image: url(../../IMG/green5.jpg);
+    }
+    95%{
+        opacity: 1;
+        background-image: url(../../IMG/green5.jpg);
+        background-size: auto 150%;
+    }
+    99%{
+        opacity: 0.8;
+        background-image: url(../../IMG/green5.jpg);
+        background-size: auto 150%;
+    }
+    100%{
+        opacity: 0.8;
+        background-image: url(../../IMG/green1.jpg);
+        background-size: auto 100%;
+    }
+    
+}

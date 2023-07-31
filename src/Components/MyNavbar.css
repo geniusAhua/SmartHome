@@ -1,0 +1,37 @@
+.my-navbar-container{
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 100;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(7px);
+}
+
+.my-navbar{
+    margin-right: 1.5rem !important;
+    margin-left: 1.5rem !important;
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+}
+
+.my-navbar .user_name-container{
+    font-weight: bolder;
+    display: flex;
+    flex: 1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.user_name{
+    /* remove the default style designed by bootstrap */
+    margin: 0 !important;
+}
+
+.my-navbar .logout-container{
+    position: absolute;
+    right: 0;
+}
+
