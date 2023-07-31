@@ -1,3 +1,5 @@
+import sys
+sys.path.insert(0, '/home/ahua/Dissertation')
 import enum
 import random
 import traceback
@@ -11,10 +13,10 @@ from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import WordCompleter
 
-from CS import CS
+from Module.CS import CS
 
-from PIT import PIT
-from SendFormat import SendFormat
+from Module.PIT import PIT
+from Module.SendFormat import SendFormat
 
 class PortType(enum.Enum):
     WAN = "1"
@@ -22,6 +24,7 @@ class PortType(enum.Enum):
 
 class Router:
     def __init__(self, nodeName):
+        self.dataTask = None
         self.server = None
         self.__nodeName = nodeName
         self.__URL_table = {}
@@ -166,11 +169,13 @@ class Router:
         return False
 
     async def __handle_INTEREST(self, packet, fromName, from_ws, portType = PortType.LAN):
-        target = packet.split("/")
+        # Packet: INTEREST://targetName/DeviceNDNName/fileName//params
+        target = packet.split("/", 1)
         dataName = None
         forward_ws = None
         # wrong packet
-        if len(target) < 2: return
+        if len(target) < 2:
+            return
         
         if target[0] == self.__nodeName:
             # return a debug packet
@@ -178,9 +183,12 @@ class Router:
                 return
         
         #Check if the packet is from WAN
-        # Packet: INTEREST://targetName/DeviceNDNName/file
+        # Packet: INTEREST://targetName/DeviceNDNName/fileName//params
         if portType == PortType.WAN:
-            NDNName = target[1]
+            if target[0] != self.__nodeName:
+                self.__echo(f"[{self.__nodeName}] can't handle the packet from WAN. The targetName is {target[0]}")
+                return
+            NDNName = target[1].split("//")[0]
             subNDNName = NDNName
             if NDNName in self.__NDN_map:
                 subNDNName = self.__NDN_map[NDNName]
@@ -192,6 +200,7 @@ class Router:
             dataName = subNDNName + "/".join(target[2:])
 
         # Check if the packet is from LAN
+        # Packet: INTEREST://DeviceNDNName/fileName
         elif portType == PortType.LAN:
             dataName = packet
             targetName = target[0]
@@ -199,7 +208,7 @@ class Router:
                 forward_ws = self.__connections[PortType.LAN][targetName]
             else:
                 forward_ws = self.__connections[PortType.WAN][self.__WAN_target]
-                
+        
         if await self.__send_data_if_exist(packet, dataName, fromName, from_ws):
             return
         if await self.__add_to_pit_if_exists(dataName, fromName):
@@ -274,13 +283,12 @@ class Router:
             return
     '''def __transform_msg'''
 
-    async def __send_interest(self, targetName, fileName):
+    async def __send_interest(self, targetName, ws, fileName):
         if targetName == self.__WAN_target:
             self.__echo(f"Sorry, we can't send interest to the router")
             return
-        if targetName in self.__connections[PortType.LAN]:
-            formatPacket = SendFormat.send_(SendFormat.INTEREST, f"{targetName}/{fileName}")
-            ws = self.__connections[PortType.LAN][targetName]
+        else:
+            formatPacket = f"{targetName}/{fileName}"
             # Use handle_INTEREST send Interest packet, because it can save the packet to PIT and transform it
             await self.__handle_INTEREST(formatPacket, self.__nodeName, ws, PortType.LAN)
             
@@ -308,7 +316,7 @@ class Router:
 
         except Exception as e:
             self.__echo(f"[{self.__nodeName}] received an error ==> {traceback.print_exc()}")
-            pass
+            
         finally:
             if clientName:
                 self.__echo(f"[{clientName[0]}] disconnect from this router")
@@ -352,11 +360,13 @@ class Router:
                     self.__echo(f"[{clientName}] send '{message}'")
                     # transform message
                     await self.__transform_msg(message, clientName, ws, PortType.WAN)
+            except Exception as e:
+                self.__echo(f"[{self.__nodeName}] received an error ==> {traceback.print_exc()}")
 
             finally:
                 self.__connections[PortType.WAN].pop(clientName, None)
                 self.__WAN_target = None
-                self.__echo(f"[{clientName}] disconnect from this router")
+                self.__echo(f"[{self.__nodeName}] disconnect with {clientName}")
 
     # clear cs and pit
     async def clear_CS_PIT(self):
@@ -396,6 +406,7 @@ class Router:
         self.__connections.clear()
         # close server
         self.server_task.cancel()
+        self.dataTask.cancel()
         try:
             await self.server_task
         except asyncio.CancelledError:
@@ -410,11 +421,21 @@ class Router:
         self.__echo(f"[{self.__nodeName}] echo is off")
         self.__echo_tag = 0
 
+    async def getSensorData(self):
+        while True:
+            if self.__connections[PortType.LAN]:
+                self.__echo("test test test")
+                for targetname, ws in self.__connections[PortType.LAN].items():
+                    await self.__send_interest(targetname, ws, ".data")
+                
+            await asyncio.sleep(5)
+
     async def main(self):
         self.server = websockets.serve(self.__handle_client, "0.0.0.0", self.__port)
         self.server_task = asyncio.ensure_future(self.server)
         self.__connections[PortType.LAN] = {}
         self.__connections[PortType.WAN] = {}
+        self.dataTask = asyncio.create_task(self.getSensorData())
         await asyncio.Future()  # run forever
 
     async def run(self):

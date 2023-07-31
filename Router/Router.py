@@ -1,12 +1,8 @@
-import base64
-import enum
-import os
-import random
-import socket
-import threading
+import sys
+import traceback
+sys.path.insert(0, '/home/ahua/Dissertation')
 import websockets
 import sys
-import time
 import asyncio
 
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -16,11 +12,11 @@ from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import WordCompleter
 
-from CS import CS
+from Module.CS import CS
 
-from FIB import FIB
-from PIT import PIT
-from SendFormat import SendFormat
+from Module.FIB import FIB
+from Module.PIT import PIT
+from Module.SendFormat import SendFormat
 
     
 class Router:
@@ -195,9 +191,16 @@ class Router:
                     self.__echo(f"[{clientName}] send '{message}'")
                     # transform message
                     await self.__transform_msg(message, clientName, ws)
+                    
+            except Exception as e:
+                self.__echo(f"[{self.__nodeName}] received an error ==> {traceback.print_exc()}")
 
             finally:
                 self.__connections.pop(clientName, None)
+                await ws.close()
+                self.__FIB.delete_nexthop_fib(clientName)
+                self.__PIT.delete_pit_with_outface(clientName)
+                self.__echo(f"[{self.__nodeName}] disconnect with {clientName}")
 
     # clear cs and pit
     async def clear_CS_PIT(self):

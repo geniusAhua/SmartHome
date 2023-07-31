@@ -1,3 +1,6 @@
+import sys
+import traceback
+sys.path.insert(0, '/home/ahua/Dissertation')
 import websockets
 import asyncio
 
@@ -8,7 +11,7 @@ from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import WordCompleter
 
-from SendFormat import SendFormat
+from Module.SendFormat import SendFormat
 
 class Sensor:
     def __init__(self, nodeName):
@@ -127,9 +130,13 @@ class Sensor:
                     # transform message
                     await self.__transform_msg(message, clientName, ws)
 
+            except Exception as e:
+                self.__echo(f"[{self.__nodeName}] received an error ==> {traceback.print_exc()}")
+
             finally:
-                ws.close()
+                await ws.close()
                 self.__ws = None
+                self.__echo(f"[{self.__nodeName}] disconnect with {clientName}")
 
     # disconnect from another node
     async def disconnect(self):
