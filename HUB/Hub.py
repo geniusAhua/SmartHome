@@ -125,14 +125,8 @@ class Router:
         self.__echo(f"for debug: packet: {packet}")
         if freshToke == "T":
             self.__echo(f"[{self.__nodeName}] received a MustBeFresh INTEREST from {fromName}, so doesn't check the CS")
-            return
-        # Always get the newest data if receives these packets
-        #if fileName == ".debug":
-        #    self.__echo(f"[{self.__nodeName}] received a .debug INTEREST from {fromName}, so doesn't check the CS")
-        #    return False
-        #elif fileName == ".data":
-        #    self.__echo(f"[{self.__nodeName}] received a .data INTEREST from {fromName}, so doesn't check the CS")
-        #    return False
+            return False
+       
         
         if self.__CS.isExist(dataName):
             async with self.__CS_lock:
@@ -160,15 +154,18 @@ class Router:
             self.__PIT.add_pit_item(dataName, fromName)
         return
     
-    async def __respond_to_interest_with_default_data(self, packet, fileName, fromName, from_ws):
+    async def __respond_to_interest_with_default_data(self, dataName, fileName, params, fromName, from_ws):
         if fileName == ".debug":
             self.__echo(f"[{self.__nodeName}] received debug packet from {fromName}")
-            await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{packet}//debugPacket"))
+            await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{dataName}//debugPacket"))
             return True
         elif fileName == ".CLIENTHELLO":
             self.__echo(f"[{self.__nodeName}] received CLIENTHELLO packet from {fromName}")
             # TODO
             return True
+        elif fileName == ".data":
+            return True
+            pass
         return False
 
     async def __handle_INTEREST(self, packet, fromName, from_ws, portType = PortType.LAN):
@@ -191,7 +188,7 @@ class Router:
             
             if targetList[-2] == self.__nodeName:
                 # return a debug packet
-                if await self.__respond_to_interest_with_default_data(packet, targetList[-1], fromName, from_ws):
+                if await self.__respond_to_interest_with_default_data(fileURL, targetList[-1], params, fromName, from_ws):
                     return
             
             #Check if the packet is from WAN
@@ -647,7 +644,12 @@ class Demo:
                                     print("Pending Interest Table is cleared.")
                             
                             elif command[0] == Command.SENDDEBUG:
-                                pass
+                                if len(command) != 2:
+                                    print(f'The expression is wrong. please check it. {command[0]} [target]')
+                                else:
+                                    target_name = command[1]
+                                    with patch_stdout():
+                                        await self.__ndn.sendDebug(target_name)
 
                             elif command != None:
                                 with patch_stdout():

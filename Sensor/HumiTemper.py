@@ -58,7 +58,7 @@ class Sensor:
         fileURL = otherList[0]
         freshToken = otherList[1]
         # params is a list
-        params = None if len(otherList) < 3 else otherList[2:]
+        params = [] if len(otherList) < 3 else otherList[2:]
         targetList = fileURL.split("/")
         # wrong packet
         if targetList[0] != self.__nodeName:
