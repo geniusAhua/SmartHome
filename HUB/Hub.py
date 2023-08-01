@@ -235,8 +235,9 @@ class Router:
     
     async def __formatEncrypt_and_decrypt_to_UTF8(self, encryptStd):
         orignalEncrypt = encryptStd.replace('|', '/')
+        orignalEncryptBytes = base64.b64decode(orignalEncrypt)
         plainText = self.__pri_key.decrypt(
-            orignalEncrypt.encode(),
+            orignalEncryptBytes,
             padding.OAEP(
                 mgf=padding.MGF1(algorithm=hashes.SHA256()),
                 algorithm=hashes.SHA256(),
