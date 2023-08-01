@@ -46,6 +46,7 @@ class Router:
         }
         '''
         self.__sensors = {}
+        self.__sensors_data = {}
         self.__CS = CS()
         self.__CS_lock = asyncio.Lock()
         self.__PIT = PIT()
@@ -156,22 +157,26 @@ class Router:
     
     async def __respond_to_interest_with_default_data(self, dataName, fileName, params, fromName, from_ws):
         if fileName == ".debug":
-            self.__echo(f"[{self.__nodeName}] received debug packet from {fromName}")
+            self.__echo(f"[{self.__nodeName}] received a requesting debug packet from {fromName}")
             await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{dataName}//debugPacket"))
             return True
         
         elif fileName == ".CLIENTHELLO":
-            self.__echo(f"[{self.__nodeName}] received CLIENTHELLO packet from {fromName}")
+            self.__echo(f"[{self.__nodeName}] received a requesting CLIENTHELLO packet from {fromName}")
             # TODO
             return True
         
         elif fileName == ".data":
+            _json_obj = json.dumps(self.__sensors_data)
+            forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}")
+            self.__echo(f"[{self.__nodeName}] received a requesting data packet from {fromName} and transform back: {forward_msg}")
+            await from_ws.send(forward_msg)
             return True
         
         elif fileName == ".sensors":
             _json_obj = json.dumps(self.__sensors)
             forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}")
-            self.__echo(f"[{self.__nodeName}] received sensors packet from {fromName} and transform back: {forward_msg}")
+            self.__echo(f"[{self.__nodeName}] received a requesting sensors packet from {fromName} and transform back: {forward_msg}")
             await from_ws.send(forward_msg)
             return True
         return False
@@ -246,6 +251,7 @@ class Router:
             otherList = packet.split("//", 1)
             dataName = otherList[0]
             contentBlock = otherList[1]
+            fileName = dataName.split("/")[-1]
 
             if self.__PIT.isExist(dataName):
                 async with self.__PIT_lock:
@@ -253,6 +259,9 @@ class Router:
                 for outface in outfaces:
                     if outface == self.__nodeName:
                         self.__echo(f"[{self.__nodeName}] received DATA from {fromName} ===> {packet}")
+                        data = contentBlock.split("//", 1)[0]
+                        python_obj = json.loads(data)
+                        self.__sensors_data[fromName] = python_obj
                         
                     elif outface in self.__connections[PortType.LAN]:
                         forward_ws = self.__connections[PortType.LAN][outface]
