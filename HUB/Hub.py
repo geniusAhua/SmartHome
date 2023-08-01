@@ -192,7 +192,6 @@ class Router:
             
             #Check if the packet is from WAN
             # Packet: INTEREST://targetName/DeviceNDNName/fileName//MustBeFresh//params
-            self.__echo(f"for debug: portType: {portType}")
             if portType == PortType.WAN:
                 NDNName = targetList[1]
                 subNDNName = NDNName
