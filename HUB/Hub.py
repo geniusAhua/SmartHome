@@ -31,9 +31,9 @@ class PortType(enum.Enum):
 class Router:
     def __init__(self, nodeName):
         with open("./pri.pem", "r") as f:
-            self.__pri_key_pem = f.read()
+            self.__pri_key_pem = f.read().replace('\n', '')
         with open("./pub.pem", "r") as f:
-            self.__pub_key_pem = f.read()
+            self.__pub_key_pem = f.read().replace('\n', '')
 
         self.__pri_key = serialization.load_pem_private_key(
             self.__pri_key_pem.encode(),
