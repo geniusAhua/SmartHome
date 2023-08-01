@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef, useContext, createContext } from 'react';
-import { BrowserRouter as Router, Route, Routes, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { useState, useCallback, useEffect, useRef, useContext, } from 'react';
+import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, json } from 'react-router-dom';
 import { ReadyState } from 'react-use-websocket';
 
 import EntryPage from '../EntryPage/EntryPage.jsx';
@@ -9,7 +9,7 @@ import HomePage from '../HomePage/HomePage';
 
 import { MyAuthContext } from '../../Components/AuthContext';
 import { WsContext } from '../../Components/WsContext';
-import { SOCKET_URL, HANDSHAKE2ROUTER_HEADER, INTEREST_HEADER, HANDSHAKE2HUB, HANDSHAKE2HUB_FILE } from '../../Const/Const.jsx';
+import { SOCKET_URL, HANDSHAKE2ROUTER_HEADER, INTEREST_HEADER, HANDSHAKE2HUB_HELLO, SENSORS_FILE, SENSORS_DATA_FILE } from '../../Const/Const.jsx';
 
 function MainPage (){
 
@@ -17,7 +17,10 @@ function MainPage (){
     const isConn2Router = useRef(false);
     const isConn2Hub = useRef(false);
 
-    // For NDN authentication
+    // encrypt. with HUB
+    const publicKey = useRef(null);
+
+    // For NDN first connect authentication
     const auth = useAuth();
 
     // Get websocket context
@@ -104,19 +107,118 @@ function MainPage (){
                 console.log("fail to connect to router, the message is: " + msg);
                 stopLoading();
                 return false;
-            }
-        }
+            };
+        };
 
         if(isConn2Router.current){
-            ws.webSocket.sendMessage(INTEREST_HEADER + ndnAdress + "/" + HANDSHAKE2HUB_FILE);
-            let serverHello = await getHubMsg();
-            let packet = serverHello.split("://")[1];
-            let [publicKey, serverRandom] = packet.split("//");
-        }
+            // SECOND: connect to hub
+            format_msg = formatINTEREST(ndnAdress, HANDSHAKE2HUB_HELLO);
+            ws.webSocket.sendMessage(format_msg);
+            // PACKET: DATA://ndnAdress/.CLIENTHELLO//publicKey
+            let jsonHub = await getHubMsg();
+            
+            if(jsonHub.status == false){
+                toastRef.current.showToast("Fail to connect to hub");
+                return false;
+            }
+            else{
+                publicKey.current = jsonHub.data;
+                console.log("for debug: " + publicKey.current);
+            }
+        };
         toastRef.current.showToast("Success to connect");
         stopLoading();
         return true;
+    };
+
+    // Process DATA packet
+    const processDATA = async (msg) => {
+        // PACKET: DATA://HubName/fileName/.sensors//T//data//signature
+        let packet = msg.split("://")[1];
+        let packetList = packet.split("//", 2);
+        let dataNameList = packetList.split("/");
+        let targetName = dataNameList[0];
+        let fileName = dataNameList[dataNameList.length - 1];
+        let contentBlockList = packetList[1].split("//");
+        let data = contentBlockList[0];
+
+        let signature = (contentBlockList.length == 2) ? contentBlockList[1] : null;
+
+        let jsonData = JSON.parse(data);
+        let jsonMsg = {};
+
+        if (targetName != auth.user.ndnAdress){
+            console.log("Received a DATA packet ==> " + msg + ", but the target is not me");
+            jsonMsg.status = false;
+        }
+        else{
+            jsonMsg.status = true;
+            jsonMsg.fileName = fileName;
+            jsonMsg.data = jsonData;
+            jsonMsg.signature = signature;
+        }
+    };
+
+    const handleData = (jsonMsg) => {
+        if(fileName == HANDSHAKE2HUB_HELLO){
+            // Save the public key
+            publicKey.current = data;
+            return true;
+        }
+        else if(fileName == HANDSHAKE2HUB_RANDOM){
+            //TODO
+        }
+        else if(fileName == HANDSHAKE2HUB_LOGIN_PERMIT){
+            //TODO
+        }
+        else if(fileName == SENSORS_FILE){
+            //TODO
+        }
+        else if(fileName == SENSORS_DATA_FILE){
+            //TODO
+        }
+        else if(fileName == COMMAND_SWITCH){
+            //TODO
+        }
+        else if(fileName == COMMAND_TEMPERATURE){
+            //TODO
+        }
     }
+
+    // Conmunicate with NDN
+    const formatINTEREST = (ndnAdress, fileName, params = null) => {
+        _mustBeFresh = true;
+        if (fileName == HANDSHAKE2HUB_HELLO){
+            // PACKET: INTEREST://ndnAdress/.CLIENTHELLO//F
+            _mustBeFresh = false;
+        }
+        else if(fileName == HANDSHAKE2HUB_RANDOM){
+            // PACKET: INTEREST://ndnAdress/.RANDOM//T//random
+            _mustBeFresh = true;
+        }
+        else if(fileName == HANDSHAKE2HUB_LOGIN_PERMIT){
+            // PACKET: INTEREST://ndnAdress/.LOGINPERMIT//T//encrypted
+            _mustBeFresh = true;
+        }
+        else if(fileName == SENSORS_FILE){
+            // PACKET: INTEREST://ndnAdress/.sensors//F
+            _mustBeFresh = false;
+        }
+        else if(fileName == SENSORS_DATA_FILE){
+            // PACKET: INTEREST://ndnAdress/.data//T
+            _mustBeFresh = true;
+        }
+        else if(fileName == COMMAND_SWITCH){
+            // PACKET: INTEREST://ndnAdress/.switch//T//switchValue
+            _mustBeFresh = true;
+        }
+        else if(fileName == COMMAND_TEMPERATURE){
+            // PACKET: INTEREST://ndnAdress/.temperature//T//temperatureValue
+            _mustBeFresh = true;
+        }
+
+        return INTEREST_HEADER + ndnAdress + "/" + fileName + (_mustBeFresh ? "//T" : "//F") + (params == null ? "" : "//" + params);
+    };
 
 
     // handle submit
@@ -170,8 +272,11 @@ function MainPage (){
                 routerPromise.current(msg);
             }
             // if we haven't connected to hub, we should process the message with different method
-            else if (msg.split("://")[0] == "DATA" && !isConn2Hub.current && hubPromise.current != null){
-                hubPromise.current(msg);
+            else if (msg.split("://")[0] == "DATA"){
+                let jsonMsg = processDATA(msg);
+                if (jsonMsg.fileName == HANDSHAKE2HUB_HELLO){
+                    hubPromise.current(jsonMsg);
+                }
             }
         };
     }, []);
