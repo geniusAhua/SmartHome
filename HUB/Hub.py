@@ -384,6 +384,7 @@ class Router:
                 self.__echo(f"[{self.__nodeName}] received an error ==> {traceback.print_exc()}")
 
             finally:
+                await ws.close()
                 self.__connections[PortType.WAN].pop(clientName, None)
                 self.__WAN_target = None
                 self.__echo(f"[{self.__nodeName}] disconnect with {clientName}")
