@@ -213,6 +213,8 @@ class Router:
             return True
         
         elif fileName == ".data":
+            if params[-1] not in self.__permitUser:
+                return False
             _json_obj = json.dumps(self.__sensors_data)
             signature = self.__sign_and_formatSignature(_json_obj)
             forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}//{signature}")
@@ -221,6 +223,8 @@ class Router:
             return True
         
         elif fileName == ".sensors":
+            if params[-1] not in self.__permitUser:
+                return False
             _json_obj = json.dumps(self.__sensors)
             signature = self.__sign_and_formatSignature(_json_obj)
             forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}//{signature}")
@@ -269,9 +273,6 @@ class Router:
             forward_ws = None
             originalDataName = None
             # wrong packet
-            if targetList[-1] != ".CLIENTHELLO" and (user  not in self.__permitUser):
-                self.__echo(f"[{self.__nodeName}] can't handle a packet from a user who doesn't have permission ==> {user}")
-                return
             if portType == PortType.WAN and targetList[0] != self.__nodeName:
                 return
             if len(targetList) < 2:
@@ -281,6 +282,10 @@ class Router:
                 # return a debug packet
                 if await self.__respond_to_interest_with_default_data(fileURL, targetList[-1], params, fromName, from_ws):
                     return
+                
+            if user not in self.__permitUser:
+                self.__echo(f"[{self.__nodeName}] can't handle a packet from a user who doesn't have permission ==> {user}")
+                return
             
             #Check if the packet is from WAN
             # Packet: INTEREST://targetName/DeviceNDNName/fileName//MustBeFresh//params
