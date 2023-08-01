@@ -359,6 +359,14 @@ class Router:
                 self.__echo(f"[{clientName[0]}] disconnect from this router")
                 self.__connections[PortType.LAN].pop(clientName[0], None)
                 self.__PIT.delete_pit_with_outface(clientName[0])
+                # remove this node's info
+                for k, v in self.__NDN_map.items():
+                    if v == clientName[0]:
+                        self.__sensors.pop(k, None)
+                        self.__sensors_data.pop(v, None)
+                        self.__NDN_map.pop(k, None)
+                        break
+                
                 return
 
 
