@@ -221,7 +221,7 @@ class Router:
                     self.__echo(f"Something wrong with [{self.__nodeName}]. Please check the code.")
                     return
 
-                dataName = subNDNName + "/".join(targetList[2:])
+                dataName = f"{subNDNName}{'/' + '/'.join(targetList[2:])}"
 
             # Check if the packet is from LAN
             # Packet: INTEREST://DeviceNDNName/fileName//MustBeFresh//params
