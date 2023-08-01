@@ -1,3 +1,4 @@
+import base64
 import json
 import sys
 sys.path.insert(0, '../../Dissertation')
@@ -13,6 +14,10 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import WordCompleter
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
 
 from Module.CS import CS
 
@@ -26,11 +31,24 @@ class PortType(enum.Enum):
 class Router:
     def __init__(self, nodeName):
         with open("./pri.pem", "r") as f:
-            self.__pri_key = f.read()
+            self.__pri_key_pem = f.read()
         with open("./pub.pem", "r") as f:
-            self.__pub_key = f.read()
+            self.__pub_key_pem = f.read()
+
+        self.__pri_key = serialization.load_pem_private_key(
+            self.__pri_key_pem.encode(),
+            password=None,
+            backend=default_backend()
+        )
+        self.__pub_key = serialization.load_pem_public_key(
+            self.__pub_key_pem.encode(),
+            backend=default_backend()
+        )
+
         self.dataTask = None
         self.server = None
+        self.__password = "12345678"
+        self.__permitUser = []
         self.__nodeName = nodeName
         self.__URL_table = {"router1": "ws://yujunwei.love:2048"}
         '''{
@@ -168,26 +186,74 @@ class Router:
         elif fileName == ".CLIENTHELLO":
             self.__echo(f"[{self.__nodeName}] received a requesting CLIENTHELLO packet from {fromName}")
             jsonData = {}
-            jsonData["publicKey"] = self.__pub_key
+            jsonData["publicKey"] = self.__pub_key_pem
             _json_obj = json.dumps(jsonData)
             forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}")
             await from_ws.send(forward_msg)
             return True
         
+        elif fileName == ".LOGINPERMIT":
+            self.__echo(f"[{self.__nodeName}] received a requesting LOGINPERMIT packet from {fromName}")
+            # use the private key to decrypt the message
+            plainPassword = self.__formatEncrypt_and_decrypt_to_UTF8(params[0])
+            plainUserName = self.__formatEncrypt_and_decrypt_to_UTF8(params[-1])
+            self.__echo(f"for debug: | {plainPassword} || {plainUserName} |")
+            # check the password and username
+            if plainPassword != self.__password:
+                self.__echo(f"[{self.__nodeName}] received a wrong password or username from {fromName}")
+                return True
+            # add the user to permitUser
+            self.__permitUser.append(plainUserName)
+            jsonData = {}
+            jsonData["permit"] = "success"
+            _json_obj = json.dumps(jsonData)
+            signature = self.__sign_and_formatSignature(_json_obj)
+            forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}//{signature}")
+            await from_ws.send(forward_msg)
+            return True
+        
         elif fileName == ".data":
             _json_obj = json.dumps(self.__sensors_data)
-            forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}")
+            signature = self.__sign_and_formatSignature(_json_obj)
+            forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}//{signature}")
             self.__echo(f"[{self.__nodeName}] received a requesting data packet from {fromName} and transform back: {forward_msg}")
             await from_ws.send(forward_msg)
             return True
         
         elif fileName == ".sensors":
             _json_obj = json.dumps(self.__sensors)
-            forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}")
+            signature = self.__sign_and_formatSignature(_json_obj)
+            forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}//{signature}")
             self.__echo(f"[{self.__nodeName}] received a requesting sensors packet from {fromName} and transform back: {forward_msg}")
             await from_ws.send(forward_msg)
             return True
         return False
+    
+    async def __formatEncrypt_and_decrypt_to_UTF8(self, encryptStd):
+        orignalEncrypt = encryptStd.replace('|', '/')
+        plainText = self.__pri_key.decrypt(
+            orignalEncrypt.encode(),
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None,
+            )
+        ).decode('utf-8')
+        return plainText
+    
+    async def __sign_and_formatSignature(self, plainText):
+        signature = self.__pri_key.sign(
+            plainText.encode(),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        signature_base64 = base64.b64encode(signature).decode()
+        formatSignature = signature_base64.replace('/', '|')
+        return formatSignature
+
 
     async def __handle_INTEREST(self, packet, fromName, from_ws, portType = PortType.LAN):
         try:
@@ -197,11 +263,15 @@ class Router:
             freshToken = otherList[1]
             # params is a list
             params = [] if len(otherList) < 3 else otherList[2:]
+            user = otherList[-1]
             targetList = fileURL.split("/")
             dataName = None
             forward_ws = None
             originalDataName = None
             # wrong packet
+            if user  not in self.__permitUser:
+                self.__echo(f"[{self.__nodeName}] can't handle a packet from a user who doesn't have permission ==> {user}")
+                return
             if portType == PortType.WAN and targetList[0] != self.__nodeName:
                 return
             if len(targetList) < 2:
