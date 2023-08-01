@@ -100,7 +100,7 @@ class Sensor:
                         
         except Exception as e:
             self.__echo(f'An error occurred in __transform_msg: {traceback.print_exc()}')
-            return
+
     '''def __transform_msg'''
 
     async def send_interest(self, targetName, fileName):

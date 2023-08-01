@@ -121,8 +121,7 @@ class Router:
     '''def __handle_HANDSHAKE'''
 
     '''def __handle_INTEREST'''
-    async def __send_data_if_exist(self, packet, dataName, freshToke, fromName, from_ws, originalDataName = None):
-        self.__echo(f"for debug: packet: {packet}")
+    async def __send_data_if_exist(self, dataName, freshToke, fromName, from_ws, originalDataName = None):
         if freshToke == "T":
             self.__echo(f"[{self.__nodeName}] received a MustBeFresh INTEREST from {fromName}, so doesn't check the CS")
             return False
@@ -186,7 +185,7 @@ class Router:
             if len(targetList) < 2:
                 return
             
-            if targetList[-2] == self.__nodeName:
+            if targetList[-2] == self.__nodeName and targetList[0] == targetList[-2]:
                 # return a debug packet
                 if await self.__respond_to_interest_with_default_data(fileURL, targetList[-1], params, fromName, from_ws):
                     return
@@ -200,11 +199,15 @@ class Router:
                 originalDataName = fileURL
                 if NDNName in self.__NDN_map:
                     subNDNName = self.__NDN_map[NDNName]
-                if subNDNName in self.__connections[PortType.LAN]:
-                    forward_ws = self.__connections[PortType.LAN][subNDNName]
                 else:
                     self.__echo(f"[{self.__nodeName}] can't find the target [{subNDNName}]")
                     return
+                if subNDNName in self.__connections[PortType.LAN]:
+                    forward_ws = self.__connections[PortType.LAN][subNDNName]
+                else:
+                    self.__echo(f"Something wrong with [{self.__nodeName}]. Please check the code.")
+                    return
+
                 dataName = subNDNName + "/".join(targetList[2:])
 
             # Check if the packet is from LAN
@@ -230,45 +233,50 @@ class Router:
 
     '''def __handle_DATA'''
     async def __handle_DATA(self, packet, fromName, portType):
-        dataParams = packet.split("//", 1)
-        dataName = dataParams[0]
-        data = dataParams[1]
+        try:
+            # Packet: DATA://targetName/DeviceNDNName/fileName//data//signature
+            otherList = packet.split("//", 1)
+            dataName = otherList[0]
+            contentBlock = otherList[1]
 
-        if self.__PIT.isExist(dataName):
-            async with self.__PIT_lock:
-                outfaces = self.__PIT.find_item(dataName)
-            for outface in outfaces:
-                if outface == self.__nodeName:
-                    self.__echo(f"[{self.__nodeName}] received DATA from {fromName} ::: {packet}")
-                    
-                elif outface in self.__connections[PortType.LAN]:
-                    forward_ws = self.__connections[PortType.LAN][outface]
-                    formatDataPacket = SendFormat.send_(SendFormat.DATA, packet)
-                    await forward_ws.send(formatDataPacket)
-                
-                elif outface in self.__connections[PortType.WAN]:
-                    if portType == PortType.LAN:
-                        forward_ws = self.__connections[PortType.WAN][outface]
-                        # cause the packet is from LAN, so we need to transform the name of DATA
-                        fileName = dataName.split("/")[-1]
-                        formatDataName = None
-                        for k, v in self.__NDN_map.items():
-                            if v == fromName:
-                                formatDataName = self.__nodeName + "/" + k + "/" + fileName
-                                break
-                        formatDataPacket = SendFormat.send_(SendFormat.DATA, formatDataName + "//" + data)
-                        self.__echo(f"[{self.__nodeName}] received DATA from {fromName} and transform to [{outface}]: {formatDataPacket}")
-                        await forward_ws.send(formatDataPacket)
+            if self.__PIT.isExist(dataName):
+                async with self.__PIT_lock:
+                    outfaces = self.__PIT.find_item(dataName)
+                for outface in outfaces:
+                    if outface == self.__nodeName:
+                        self.__echo(f"[{self.__nodeName}] received DATA from {fromName} ===> {packet}")
                         
-                    else:
-                        self.__echo(f"This situation should not happen. Please check the code. From {fromName} to {outface} ::: {packet}")
-                        return
-            
-            async with self.__CS_lock:
-                self.__CS.add_cs_item(dataName, data)
-            async with self.__PIT_lock:
-                self.__PIT.delete_pit_item(dataName)
-            return
+                    elif outface in self.__connections[PortType.LAN]:
+                        forward_ws = self.__connections[PortType.LAN][outface]
+                        formatDataPacket = SendFormat.send_(SendFormat.DATA, packet)
+                        await forward_ws.send(formatDataPacket)
+                    
+                    elif outface in self.__connections[PortType.WAN]:
+                        if portType == PortType.LAN:
+                            forward_ws = self.__connections[PortType.WAN][outface]
+                            # cause the packet is from LAN, so we need to transform the name of DATA
+                            fileName = dataName.split("/")[-1]
+                            formatDataName = None
+                            for k, v in self.__NDN_map.items():
+                                if v == fromName:
+                                    formatDataName = self.__nodeName + "/" + k + "/" + fileName
+                                    break
+                            formatDataPacket = SendFormat.send_(SendFormat.DATA, formatDataName + "//" + contentBlock)
+                            self.__echo(f"[{self.__nodeName}] received DATA from {fromName} and transform to [{outface}]: {formatDataPacket}")
+                            await forward_ws.send(formatDataPacket)
+                            
+                        else:
+                            self.__echo(f"This situation should not happen. Please check the code. From {fromName} to {outface} ===> {packet}")
+                            return
+                
+                async with self.__CS_lock:
+                    self.__CS.add_cs_item(dataName, contentBlock)
+                async with self.__PIT_lock:
+                    self.__PIT.delete_pit_item(dataName)
+                return
+        except Exception as e:
+            self.__echo(f"An error occurred in _handle_DATA: {traceback.print_exc()}")
+
     '''def __handle_DATA'''
 
     '''def __transform_msg'''
@@ -289,10 +297,11 @@ class Router:
                 return
                         
         except Exception as e:
-            self.__echo(f'An error occurred: {e}')
-            return
+            self.__echo(f"An error occurred in _transform_msg: {traceback.print_exc()}")
+            
     '''def __transform_msg'''
 
+    '''def __send_interest'''
     async def __send_interest(self, targetName, ws, fileName):
         if targetName == self.__WAN_target:
             self.__echo(f"Sorry, we can't send interest to the router")
@@ -301,6 +310,7 @@ class Router:
             formatPacket = f"{targetName}/{fileName}//T"
             # Use handle_INTEREST send Interest packet, because it can save the packet to PIT and transform it
             await self.__handle_INTEREST(formatPacket, self.__nodeName, ws, PortType.LAN)
+    '''def __send_interest'''
             
 
     # for the other routers which connect to this router
