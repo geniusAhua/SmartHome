@@ -25,6 +25,10 @@ class PortType(enum.Enum):
 
 class Router:
     def __init__(self, nodeName):
+        with open("./pri.pem", "r") as f:
+            self.__pri_key = f.read()
+        with open("./pub.pem", "r") as f:
+            self.__pub_key = f.read()
         self.dataTask = None
         self.server = None
         self.__nodeName = nodeName
@@ -163,7 +167,11 @@ class Router:
         
         elif fileName == ".CLIENTHELLO":
             self.__echo(f"[{self.__nodeName}] received a requesting CLIENTHELLO packet from {fromName}")
-            # TODO
+            jsonData = {}
+            jsonData["publicKey"] = self.__pub_key
+            _json_obj = json.dumps(jsonData)
+            forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}")
+            await from_ws.send(forward_msg)
             return True
         
         elif fileName == ".data":
