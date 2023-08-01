@@ -72,20 +72,17 @@ class Router:
     '''def __handle_HANDSHAKE'''
 
     '''def __handle_INTEREST'''
-    async def __send_data_if_exist(self, packet, dataName, fromName, from_ws):
-        fileName = dataName.split("/")[-1]
-        # Always get the newest data if receives these packets
-        if fileName == ".debug":
-            self.__echo(f"[{self.__nodeName}] received a .debug INTEREST from {fromName}, so doesn't check the CS")
+    async def __send_data_if_exist(self, dataName, freshToke, fromName, from_ws, originalDataName = None):
+        if freshToke == "T":
+            self.__echo(f"[{self.__nodeName}] received a MustBeFresh INTEREST from {fromName}, so doesn't check the CS")
             return False
-        elif fileName == ".data":
-            self.__echo(f"[{self.__nodeName}] received a .data INTEREST from {fromName}, so doesn't check the CS")
-            return False
+       
         
         if self.__CS.isExist(dataName):
             async with self.__CS_lock:
                 data = self.__CS.find_item(dataName)
-            formatDataPacket = SendFormat.send_(SendFormat.DATA, f"{packet}//{data}")
+            # if trans back to WAN, we need to transform the name of DATA
+            formatDataPacket = SendFormat.send_(SendFormat.DATA, f"{dataName if not originalDataName else originalDataName}//{data}")
             self.__echo(f"[{self.__nodeName}] has the data and trans back to {fromName} ::: {formatDataPacket}")
             await from_ws.send(formatDataPacket)
             return True
@@ -99,74 +96,87 @@ class Router:
             return True
         return False
 
-    async def __forward_interest_then_add_pit(self, dataName, fromName, to_ws):
-        transform_msg = SendFormat.send_(SendFormat.INTEREST, dataName)
+    async def __forward_interest_then_add_pit(self, dataName, freshToken, params, fromName, to_ws):
+        transform_msg = SendFormat.send_(SendFormat.INTEREST, f"{dataName}//{freshToken}{'//'+'//'.join(params) if params else ''}")
         self.__echo(f"[{self.__nodeName}] forward interest to {fromName} ::: {transform_msg}")
         await to_ws.send(transform_msg)
         async with self.__PIT_lock:
             self.__PIT.add_pit_item(dataName, fromName)
         return
     
-    async def __respond_to_interest_with_default_data(self, packet, fileName, fromName, from_ws):
+    async def __respond_to_interest_with_default_data(self, packet, fileName, params, fromName, from_ws):
         if fileName == ".debug":
             self.__echo(f"[{self.__nodeName}] received debug packet from {fromName}")
             await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{packet}//debugPacket"))
             return True
-        elif fileName == ".CLIENTHELLO":
-            self.__echo(f"[{self.__nodeName}] received CLIENTHELLO packet from {fromName}")
-            # TODO
-            return True
         return False
 
-    async def __handle_INTEREST(self, packet, fromName, from_ws, portType = PortType.LAN):
-        # Packet: INTEREST://targetName/DeviceNDNName/fileName//params
-        target = packet.split("/", 1)
-        dataName = None
-        forward_ws = None
-        # wrong packet
-        if len(target) < 2:
+    async def __handle_INTEREST(self, packet, fromName, from_ws):
+        try:
+            # Packet: INTEREST://targetName/DeviceNDNName/fileName//MustBeFresh//params
+            otherList = packet.split("//")
+            fileURL = otherList[0]
+            freshToken = otherList[1]
+            # params is a list
+            params = [] if len(otherList) < 3 else otherList[2:]
+            targetList = fileURL.split("/")
+            dataName = None
+            forward_ws = None
+            originalDataName = None
+            # wrong packet
+            if len(targetList) < 2:
+                return
+            
+            if targetList[0] == self.__nodeName and targetList[0] == targetList[-2]:
+                # return a debug packet
+                if await self.__respond_to_interest_with_default_data(fileURL, targetList[-1], params, fromName, from_ws):
+                    return
+            
+            dataName = fileURL
+            # Packet: INTEREST://targetName/DeviceNDNName/fileName//MustBeFresh//params
+            if await self.__send_data_if_exist(dataName, freshToken, fromName, from_ws):
+                return
+            if await self.__add_to_pit_if_exists(dataName, fromName):
+                return
+            # forward interest
+            await self.__forward_interest_then_add_pit(dataName, freshToken, params, fromName, forward_ws)
             return
         
-        if target[0] == self.__nodeName:
-            # return a debug packet
-            if await self.__respond_to_interest_with_default_data(packet, target[1], fromName, from_ws):
-                return
-        
-        #Check if the packet is from WAN
-        # Packet: INTEREST://targetName/DeviceNDNName/fileName//params
-        if portType == PortType.WAN:
-            if target[0] != self.__nodeName:
-                self.__echo(f"[{self.__nodeName}] can't handle the packet from WAN. The targetName is {target[0]}")
-                return
-            NDNName = target[1].split("//")[0]
-            subNDNName = NDNName
-            if NDNName in self.__NDN_map:
-                subNDNName = self.__NDN_map[NDNName]
-            if subNDNName in self.__connections[PortType.LAN]:
-                forward_ws = self.__connections[PortType.LAN][subNDNName]
-            else:
-                self.__echo(f"[{self.__nodeName}] can't find the target [{subNDNName}]")
-                return
-            dataName = subNDNName + "/".join(target[2:])
-
-        # Check if the packet is from LAN
-        # Packet: INTEREST://DeviceNDNName/fileName
-        elif portType == PortType.LAN:
-            dataName = packet
-            targetName = target[0]
-            if targetName in self.__connections[PortType.LAN]:
-                forward_ws = self.__connections[PortType.LAN][targetName]
-            else:
-                forward_ws = self.__connections[PortType.WAN][self.__WAN_target]
-        
-        if await self.__send_data_if_exist(packet, dataName, fromName, from_ws):
-            return
-        if await self.__add_to_pit_if_exists(dataName, fromName):
-            return
-        # forward interest
-        await self.__forward_interest_then_add_pit(dataName, fromName, forward_ws)
-        return
+        except Exception as e:
+            self.__echo(f"An error occurred in __handle_INTEREST: {traceback.print_exc()}")
     '''def __handle_INTEREST'''
+
+    '''def __handle_DATA'''
+    async def __handle_DATA(self, packet, fromName):
+        try:
+            # Packet: DATA://targetName/DeviceNDNName/fileName//data//signature
+            otherList = packet.split("//", 1)
+            dataName = otherList[0]
+            targetName = dataName.split("/")[0]
+            contentBlock = otherList[1]
+            if self.__PIT.isExist(dataName):
+                async with self.__PIT_lock:
+                    outfaces = self.__PIT.find_item(dataName)
+                for outface in outfaces:
+                    if outface == self.__nodeName:
+                        self.__echo(f"[{self.__nodeName}] received DATA from {fromName} ===> {packet}")
+                    if outface in self.__connections:
+                        forward_ws = self.__connections[outface]
+                        formatDataPacket = SendFormat.send_(SendFormat.DATA, f"{packet}")
+                        await forward_ws.send(formatDataPacket)
+                
+                async with self.__CS_lock:
+                    self.__CS.add_cs_item(dataName, dataName)
+                async with self.__PIT_lock:
+                    self.__PIT.delete_pit_item(dataName)
+                async with self.__FIB_lock:
+                    self.__FIB.update_fib(fromName, targetName)
+                return
+        
+        except Exception as e:
+            self.__echo(f"An error occurred in __handle_DATA: {traceback.print_exc()}")
+
+    '''def __handle_DATA'''
 
     # transform the msg to the target
     '''def __transform_msg'''
@@ -178,68 +188,15 @@ class Router:
 
         try:
             if pktHeader == SendFormat.INTEREST:
-                target = packet.split("/")
-                # wrong packet
-                if len(target) < 2: return
-                if target[-2] == self.__nodeName:
-                    if target[-1] == ".debug":
-                        await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{packet}//debugPacket"))
-                        return
-                        
-                if self.__CS.isExist(packet):
-                    # send data
-                    async with self.__CS_lock:
-                        data = self.__CS.find_item(packet)
-                        await from_ws.send(SendFormat.send_(SendFormat.DATA, packet + "//" + data))
-                        return
-                
-                else:
-                    if self.__PIT.isExist(packet):
-                        async with self.__PIT_lock:
-                            self.__PIT.add_pit_item(packet, from_name[0])
-                        return
-                    else:
-                        async with self.__PIT_lock:
-                            self.__PIT.add_pit_item(packet, from_name[0])
-                        # forward interest
-                        async with self.__FIB_lock:
-                            next_hop_name = self.__FIB.select_nexthop(packet)
-                        if next_hop_name is not None and next_hop_name in self.__connections:
-                            forward_ws = self.__connections[next_hop_name]
-                            await forward_ws.send(msg)
-                            return
-                            
-                        else:
-                            # broadcast
-                            async with self.__FIB_lock:
-                                broadcast_list = self.__FIB.broadcast_list()
-                            for _next in broadcast_list:
-                                if _next != from_name[0]:
-                                    forward_ws = self.__connections[_next]
-                                    self.__echo(f"[{from_name[0]}] broadcast interest to [{_next}]")
-                                    await forward_ws.send(msg)
-                            return
+                await self.__handle_INTEREST(packet, from_name, from_ws)
+                return
             
             elif pktHeader == SendFormat.DATA:
-                dataPacket = packet.split("//", 1)
-                if self.__PIT.isExist(dataPacket[0]):
-                    async with self.__PIT_lock:
-                        outfaces = self.__PIT.find_item(dataPacket[0])
-                    for outface in outfaces:
-                        if outface in self.__connections:
-                            forward_ws = self.__connections[outface]
-                            await forward_ws.send(msg)
-                    
-                    async with self.__CS_lock:
-                        self.__CS.add_cs_item(dataPacket[0], dataPacket[1])
-                    async with self.__PIT_lock:
-                        self.__PIT.delete_pit_item(dataPacket[0])
-                    async with self.__FIB_lock:
-                        self.__FIB.update_fib(from_name[0], dataPacket[0].split("/")[0])
-                    return
+                await self.__handle_DATA(packet, from_name)
+                return
         except Exception as e:
-            self.__echo(f'An error occurred: {e}')
-            return
+            self.__echo(f"An error occurred in __transform_msg: {traceback.print_exc()}")
+
     '''def __transform_msg'''
 
     # for the other routers which connect to this router
