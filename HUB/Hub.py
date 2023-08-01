@@ -35,8 +35,6 @@ class Router:
         with open("./pub.pem", "r") as f:
             self.__pub_key_pem = f.read()
 
-        self.__pri_key_pem = self.__pri_key_pem.replace('\n', '')
-        self.__pub_key_pem = self.__pub_key_pem.replace('\n', '')
         self.__pri_key = serialization.load_pem_private_key(
             self.__pri_key_pem.encode(),
             password=None,
@@ -75,7 +73,7 @@ class Router:
         self.__CS_lock = asyncio.Lock()
         self.__PIT = PIT()
         self.__PIT_lock = asyncio.Lock()
-        self.__echo_tag = 0 # 0: not echo, 1: echo received msg
+        self.__echo_tag = 1 # 0: not echo, 1: echo received msg
         self.__count_LAN_iterface = 10
         self.__addrs_pointer = 10
         self.__available_NDN_addrs = self.__generate_unique_random_name(self.__count_LAN_iterface)
@@ -188,7 +186,8 @@ class Router:
         elif fileName == ".CLIENTHELLO":
             self.__echo(f"[{self.__nodeName}] received a requesting CLIENTHELLO packet from {fromName}")
             jsonData = {}
-            jsonData["publicKey"] = self.__pub_key_pem
+
+            jsonData["publicKey"] = self.__pub_key_pem.replace('\n', '')
             _json_obj = json.dumps(jsonData)
             forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}")
             await from_ws.send(forward_msg)
