@@ -195,8 +195,8 @@ class Router:
         elif fileName == ".LOGINPERMIT":
             self.__echo(f"[{self.__nodeName}] received a requesting LOGINPERMIT packet from {fromName}")
             # use the private key to decrypt the message
-            plainPassword = self.__formatEncrypt_and_decrypt_to_UTF8(params[0])
-            plainUserName = self.__formatEncrypt_and_decrypt_to_UTF8(params[-1])
+            plainPassword = await self.__formatEncrypt_and_decrypt_to_UTF8(params[0])
+            plainUserName = await self.__formatEncrypt_and_decrypt_to_UTF8(params[-1])
             self.__echo(f"for debug: | {plainPassword} || {plainUserName} |")
             # check the password and username
             if plainPassword != self.__password:
@@ -207,7 +207,7 @@ class Router:
             jsonData = {}
             jsonData["permit"] = "success"
             _json_obj = json.dumps(jsonData)
-            signature = self.__sign_and_formatSignature(_json_obj)
+            signature = await self.__sign_and_formatSignature(_json_obj)
             forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}//{signature}")
             await from_ws.send(forward_msg)
             return True
@@ -216,7 +216,7 @@ class Router:
             if params[-1] not in self.__permitUser:
                 return False
             _json_obj = json.dumps(self.__sensors_data)
-            signature = self.__sign_and_formatSignature(_json_obj)
+            signature = await self.__sign_and_formatSignature(_json_obj)
             forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}//{signature}")
             self.__echo(f"[{self.__nodeName}] received a requesting data packet from {fromName} and transform back: {forward_msg}")
             await from_ws.send(forward_msg)
@@ -226,7 +226,7 @@ class Router:
             if params[-1] not in self.__permitUser:
                 return False
             _json_obj = json.dumps(self.__sensors)
-            signature = self.__sign_and_formatSignature(_json_obj)
+            signature = await self.__sign_and_formatSignature(_json_obj)
             forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}//{signature}")
             self.__echo(f"[{self.__nodeName}] received a requesting sensors packet from {fromName} and transform back: {forward_msg}")
             await from_ws.send(forward_msg)
