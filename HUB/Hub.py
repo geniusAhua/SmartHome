@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, '/home/ahua/Dissertation')
+sys.path.insert(0, '../../Dissertation')
 import enum
 import random
 import traceback
@@ -27,7 +27,7 @@ class Router:
         self.dataTask = None
         self.server = None
         self.__nodeName = nodeName
-        self.__URL_table = {}
+        self.__URL_table = {"router1": "ws://yujunwei.love:2048"}
         '''{
                 'WAN':{'targetName': 'webSocket'},
                 'LAN':{'targetName': 'webSocket'}

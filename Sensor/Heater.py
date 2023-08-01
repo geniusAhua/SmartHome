@@ -1,6 +1,6 @@
 import sys
 import traceback
-sys.path.insert(0, '/home/ahua/Dissertation')
+sys.path.insert(0, '../../Dissertation')
 import json
 import websockets
 import asyncio
