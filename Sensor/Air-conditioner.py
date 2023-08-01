@@ -42,7 +42,10 @@ class Sensor:
             return True
         elif fileName == ".data":
             self.__echo(f"[{self.__nodeName}] received <.data> packet from {fromName}")
-            await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{dataName}//{self.__status}"))
+            jsonData = {}
+            jsonData["status"] = self.__status
+            _json_obj = json.dumps(jsonData)
+            await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}"))
             return True
         elif fileName == ".switch":
             self.__echo(f"[{self.__nodeName}] received <.switch> packet from {fromName}")
