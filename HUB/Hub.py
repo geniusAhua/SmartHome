@@ -1,3 +1,4 @@
+import json
 import sys
 sys.path.insert(0, '../../Dissertation')
 import enum
@@ -158,13 +159,21 @@ class Router:
             self.__echo(f"[{self.__nodeName}] received debug packet from {fromName}")
             await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{dataName}//debugPacket"))
             return True
+        
         elif fileName == ".CLIENTHELLO":
             self.__echo(f"[{self.__nodeName}] received CLIENTHELLO packet from {fromName}")
             # TODO
             return True
+        
         elif fileName == ".data":
             return True
-            pass
+        
+        elif fileName == ".sensors":
+            _json_obj = json.dumps(self.__sensors)
+            forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}")
+            self.__echo(f"[{self.__nodeName}] received sensors packet from {fromName} and transform back: {forward_msg}")
+            await from_ws.send(forward_msg)
+            return True
         return False
 
     async def __handle_INTEREST(self, packet, fromName, from_ws, portType = PortType.LAN):
