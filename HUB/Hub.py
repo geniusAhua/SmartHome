@@ -269,7 +269,7 @@ class Router:
             forward_ws = None
             originalDataName = None
             # wrong packet
-            if user  not in self.__permitUser:
+            if user  not in self.__permitUser and fileURL[-1] != ".CLIENTHELLO":
                 self.__echo(f"[{self.__nodeName}] can't handle a packet from a user who doesn't have permission ==> {user}")
                 return
             if portType == PortType.WAN and targetList[0] != self.__nodeName:

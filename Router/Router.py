@@ -184,7 +184,7 @@ class Router:
                         await forward_ws.send(formatDataPacket)
                 
                 async with self.__CS_lock:
-                    self.__CS.add_cs_item(dataName, dataName)
+                    self.__CS.add_cs_item(dataName, contentBlock)
                 async with self.__PIT_lock:
                     self.__PIT.delete_pit_item(dataName)
                 async with self.__FIB_lock:
