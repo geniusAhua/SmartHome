@@ -63,12 +63,13 @@ class Router:
             handshake_msg = SendFormat.send_(SendFormat.HANDSHAKE, "success")
             await from_ws.send(handshake_msg)
             self.__echo(f"[{clientName}] connect to this router successfully")
-            return True
+            self.__FIB.add_nexthop_fib(clientName)
+            return
         else:
             err_msg = SendFormat.send_(SendFormat.E_SHAKEHAND, 'clientName already exists')
             await from_ws.send(err_msg)
             self.__echo(f"[{clientName}] already connected to this router")
-            return False
+            return
     '''def __handle_HANDSHAKE'''
 
     '''def __handle_INTEREST'''
@@ -90,16 +91,34 @@ class Router:
     
     async def __add_to_pit_if_exists(self, dataName, fromName):
         if self.__PIT.isExist(dataName):
-            self.__echo(f"[{self.__nodeName}] find the {dataName} in PIT and add it")
+            self.__echo(f"[{self.__nodeName}] find the {dataName} in PIT and add a outface")
             async with self.__PIT_lock:
                 self.__PIT.add_pit_item(dataName, fromName)
             return True
         return False
 
-    async def __forward_interest_then_add_pit(self, dataName, freshToken, params, fromName, to_ws):
+    async def __forward_interest_then_add_pit(self, dataName, freshToken, params, fromName):
+        # forward interest
+        targetName = dataName.split('/')[0]
         transform_msg = SendFormat.send_(SendFormat.INTEREST, f"{dataName}//{freshToken}{'//'+'//'.join(params) if params else ''}")
-        self.__echo(f"[{self.__nodeName}] forward interest to {fromName} ::: {transform_msg}")
-        await to_ws.send(transform_msg)
+        self.__echo(f"for debug: transform_msg: {transform_msg}")
+        async with self.__FIB_lock:
+            next_hop_name = self.__FIB.select_nexthop(targetName)
+        if next_hop_name is not None and next_hop_name in self.__connections:
+            forward_ws = self.__connections[next_hop_name]
+            self.__echo(f"[{self.__nodeName}] forward interest to {fromName} ::: {transform_msg}")
+            await forward_ws.send(transform_msg)
+            
+        else:
+            # broadcast
+            async with self.__FIB_lock:
+                broadcast_list = self.__FIB.broadcast_list()
+            for _next in broadcast_list:
+                if _next != fromName:
+                    forward_ws = self.__connections[_next]
+                    self.__echo(f"[{self.__nodeName}] broadcast interest to [{_next}]")
+                    await forward_ws.send(transform_msg)
+        
         async with self.__PIT_lock:
             self.__PIT.add_pit_item(dataName, fromName)
         return
@@ -121,7 +140,6 @@ class Router:
             params = [] if len(otherList) < 3 else otherList[2:]
             targetList = fileURL.split("/")
             dataName = None
-            forward_ws = None
             originalDataName = None
             # wrong packet
             if len(targetList) < 2:
@@ -139,7 +157,7 @@ class Router:
             if await self.__add_to_pit_if_exists(dataName, fromName):
                 return
             # forward interest
-            await self.__forward_interest_then_add_pit(dataName, freshToken, params, fromName, forward_ws)
+            await self.__forward_interest_then_add_pit(dataName, freshToken, params, fromName)
             return
         
         except Exception as e:
