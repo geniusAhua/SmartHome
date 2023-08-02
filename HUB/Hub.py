@@ -170,6 +170,7 @@ class Router:
         return False
 
     async def __forward_interest_then_add_pit(self, dataName, freshToken, params, fromName, to_ws):
+        if len(params) > 1: params.pop()
         transform_msg = SendFormat.send_(SendFormat.INTEREST, f"{dataName}//{freshToken}{'//'+'//'.join(params) if params else ''}")
         self.__echo(f"[{self.__nodeName}] forward interest to {fromName} ::: {transform_msg}")
         await to_ws.send(transform_msg)
