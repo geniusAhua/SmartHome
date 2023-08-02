@@ -53,7 +53,7 @@ class Sensor:
             self.__echo(f"[{self.__nodeName}] received <.switch> packet from {fromName}")
             self.__status = params[0]
             jsonData = {}
-            jsonData["status"] = "success"
+            jsonData["status"] = True
             _json_obj = json.dumps(jsonData)
             await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}"))
         elif fileName == ".temperature":
@@ -61,7 +61,7 @@ class Sensor:
             self.__echo(f"[{self.__nodeName}] received <.temperature> packet from {fromName}")
             self.__temperature = int(data)
             jsonData = {}
-            jsonData["status"] = "success"
+            jsonData["status"] = True
             _json_obj = json.dumps(jsonData)
             await from_ws.send(SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}"))
         return False

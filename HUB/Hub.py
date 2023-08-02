@@ -187,7 +187,7 @@ class Router:
             self.__echo(f"[{self.__nodeName}] received a requesting CLIENTHELLO packet from {fromName}")
             jsonData = {}
 
-            jsonData["publicKey"] = self.__pub_key_pem.replace('\n', '')
+            jsonData["publicKey"] = self.__pub_key_pem.replace('\n', '').replace("/", "|")
             _json_obj = json.dumps(jsonData)
             forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}")
             await from_ws.send(forward_msg)
@@ -200,16 +200,33 @@ class Router:
             plainUserName = await self.__formatEncrypt_and_decrypt_to_UTF8(params[-1])
             self.__echo(f"for debug: | {plainPassword} || {plainUserName} |")
             # check the password and username
+            jsonData = {}
             if plainPassword != self.__password:
                 self.__echo(f"[{self.__nodeName}] received a wrong password or username from {fromName}")
-                return True
-            # add the user to permitUser
-            self.__permitUser.append(plainUserName)
-            jsonData = {}
-            jsonData["permit"] = "success"
+                jsonData["permit"] = False
+            else:
+                self.__echo(f"[{self.__nodeName}] received a correct password and username from {fromName}")
+                jsonData["permit"] = True
+                # add the user to permitUser
+                self.__permitUser.append(plainUserName)
+
             _json_obj = json.dumps(jsonData)
             signature = await self.__sign_and_formatSignature(_json_obj)
             forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}//{signature}")
+            await from_ws.send(forward_msg)
+            return True
+        
+        elif fileName == ".LOGOUT":
+            self.__echo(f"[{self.__nodeName}] received a requesting LOGOUT packet from {fromName}")
+            # use the private key to decrypt the message
+            plainUserName = await self.__formatEncrypt_and_decrypt_to_UTF8(params[-1])
+            if plainUserName in self.__permitUser:
+                self.__echo(f"[{self.__nodeName}] remove the permition of {fromName}")
+                self.__permitUser.remove(plainUserName)
+            jsonData = {}
+            jsonData["status"] = True
+            _json_obj = json.dumps(jsonData)
+            forward_msg = SendFormat.send_(SendFormat.DATA, f"{dataName}//{_json_obj}")
             await from_ws.send(forward_msg)
             return True
         
@@ -285,13 +302,17 @@ class Router:
                 if await self.__respond_to_interest_with_default_data(fileURL, targetList[-1], params, fromName, from_ws):
                     return
                 
-            if user not in self.__permitUser:
-                self.__echo(f"[{self.__nodeName}] can't handle a packet from a user who doesn't have permission ==> {user}")
-                return
             
             #Check if the packet is from WAN
             # Packet: INTEREST://targetName/DeviceNDNName/fileName//MustBeFresh//params
             if portType == PortType.WAN:
+                # use the private key to decrypt the message
+                plainUserName = await self.__formatEncrypt_and_decrypt_to_UTF8(user)
+                # check the user whether has permission
+                if plainUserName not in self.__permitUser:
+                    self.__echo(f"[{self.__nodeName}] can't handle a packet from a user who doesn't have permission ==> {plainUserName}")
+                    return
+                
                 NDNName = targetList[1]
                 subNDNName = NDNName
                 originalDataName = fileURL
