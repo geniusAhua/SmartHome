@@ -48,7 +48,7 @@ class Router:
         self.dataTask = None
         self.server = None
         self.__password = "12345678"
-        self.__permitUser = []
+        self.__permitUser = set()
         self.__nodeName = nodeName
         self.__URL_table = {"router1": "ws://yujunwei.love:2048"}
         '''{
@@ -208,7 +208,7 @@ class Router:
                 self.__echo(f"[{self.__nodeName}] received a correct password and username from {fromName}")
                 jsonData["permit"] = True
                 # add the user to permitUser
-                self.__permitUser.append(plainUserName)
+                self.__permitUser.add(plainUserName)
 
             _json_obj = json.dumps(jsonData)
             signature = await self.__sign_and_formatSignature(_json_obj)
