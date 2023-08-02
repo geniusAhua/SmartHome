@@ -231,7 +231,9 @@ class Router:
             return True
         
         elif fileName == ".data":
-            if params[-1] not in self.__permitUser:
+            plainUserName = await self.__formatEncrypt_and_decrypt_to_UTF8(params[-1])
+            if plainUserName not in self.__permitUser:
+                self.__echo(f"[{self.__nodeName}] can't handle a packet from a user who doesn't have permission ==> {plainUserName}")
                 return False
             _json_obj = json.dumps(self.__sensors_data)
             signature = await self.__sign_and_formatSignature(_json_obj)
@@ -241,7 +243,9 @@ class Router:
             return True
         
         elif fileName == ".sensors":
-            if params[-1] not in self.__permitUser:
+            plainUserName = await self.__formatEncrypt_and_decrypt_to_UTF8(params[-1])
+            if plainUserName not in self.__permitUser:
+                self.__echo(f"[{self.__nodeName}] can't handle a packet from a user who doesn't have permission ==> {plainUserName}")
                 return False
             _json_obj = json.dumps(self.__sensors)
             signature = await self.__sign_and_formatSignature(_json_obj)
