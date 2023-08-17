@@ -101,7 +101,7 @@ class Router:
         # forward interest
         targetName = dataName.split('/')[0]
         transform_msg = SendFormat.send_(SendFormat.INTEREST, f"{dataName}//{freshToken}{'//'+'//'.join(params) if params else ''}")
-        self.__echo(f"for debug: transform_msg: {transform_msg}")
+        #self.__echo(f"for debug: transform_msg: {transform_msg}")
         async with self.__FIB_lock:
             next_hop_name = self.__FIB.select_nexthop(targetName)
         if next_hop_name is not None and next_hop_name in self.__connections:
