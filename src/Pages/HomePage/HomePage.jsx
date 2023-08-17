@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import anime from 'animejs';
 import './HomePage.css';
 import CardList from '../../Components/CardList';
 import MyNavbar from '../../Components/MyNavbar';
 
-function HomePage() {
+function HomePage({onLogout, JSON_sensors, JSON_sensors_data, _encrypt_format_to_hub}) {
     //Gradient background colours
     const color1 = '#D4FFEC';
     const color2 = '#57F2CC';
@@ -76,6 +76,7 @@ function HomePage() {
     };
   }, []);
 
+
   return (
     <div className="home-page">
         <svg className='background-svg'>
@@ -91,8 +92,8 @@ function HomePage() {
         </svg>
 
         <div className="home-page-main-container">
-            <MyNavbar/>
-            <CardList/>
+            <MyNavbar onLogout={onLogout}/>
+            <CardList JSON_sensors={JSON_sensors} JSON_sensors_data={JSON_sensors_data} __encrypt_format_to_hub={_encrypt_format_to_hub}/>
         </div>
     </div>
   );

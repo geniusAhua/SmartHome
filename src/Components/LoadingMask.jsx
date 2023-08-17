@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import anime from 'animejs';
 import './LoadingMask.css';
 
-const LoadingMask = forwardRef(({ animationDuration = 2500, timeout = 5000, onTimeout }, ref) => {
+const LoadingMask = forwardRef(({ animationDuration = 2500, timeout = 10000, onTimeout }, ref) => {
     //Initiate
     const [isShown, setIsShown] = useState(false);
     const [isLoading, setIsLoading] = useState(false);

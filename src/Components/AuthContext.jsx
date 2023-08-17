@@ -1,4 +1,6 @@
-import React, { useEffect } from 'react';
+import forge from 'node-forge';
+
+import React, { useEffect, useRef } from 'react';
 import { useState, createContext } from "react";
 import { isEmpty } from '../Const/Const';
 
@@ -7,6 +9,7 @@ const MyAuthContext = createContext();
 const MyAuthProvider = ({ children }) => {
     const _user = localStorage.getItem("user");
     const [user, setUser] = useState(JSON.parse(_user));
+    const [publicKeyTemp, setPublicKeyTemp] = useState(null);
 
     const login = (userName, ndnAdress, password, callback) => {
         const _user_ = {userName, ndnAdress, password};
@@ -21,13 +24,14 @@ const MyAuthProvider = ({ children }) => {
         if (callback) callback();
     }
 
+
     //useEffect(() => {
     //    const user = localStorage.getItem("user");
     //    console.log("user: " + isEmpty(user));
     //}, []);
 
 
-    let values = { login, logout, user};
+    let values = { login, logout, user, publicKeyTemp, setPublicKeyTemp };
     return (
         <MyAuthContext.Provider value={values}>
             {children}

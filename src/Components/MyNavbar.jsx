@@ -3,11 +3,11 @@ import { useContext } from "react";
 import { MyAuthContext } from "./AuthContext";
 import { Navbar, Nav } from "react-bootstrap";
 
-const MyNavbar = () => {
-    const {user, logout} = useContext(MyAuthContext);
+const MyNavbar = ({onLogout}) => {
+    const {user} = useContext(MyAuthContext);
 
     const handleLogout = () => {
-        logout();
+        if(onLogout != null) onLogout();
     };
 
     return (

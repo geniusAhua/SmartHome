@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useContext, } from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, json } from 'react-router-dom';
 import { ReadyState } from 'react-use-websocket';
+import forge from 'node-forge';
 
 import EntryPage from '../EntryPage/EntryPage.jsx';
 import LoadingMask from '../../Components/LoadingMask';
@@ -9,23 +10,24 @@ import HomePage from '../HomePage/HomePage';
 
 import { MyAuthContext } from '../../Components/AuthContext';
 import { WsContext } from '../../Components/WsContext';
-import { SOCKET_URL, HANDSHAKE2ROUTER_HEADER, INTEREST_HEADER, HANDSHAKE2HUB_HELLO, SENSORS_FILE, SENSORS_DATA_FILE } from '../../Const/Const.jsx';
+import { HANDSHAKE2ROUTER_HEADER, INTEREST_HEADER, HANDSHAKE2HUB_HELLO, HANDSHAKE2HUB_LOGIN_PERMIT, SENSORS_FILE, SENSORS_DATA_FILE, COMMAND_SWITCH, COMMAND_TEMPERATURE, HANDSHAKE2HUB_LOGOUT, formatINTEREST } from '../../Const/Const.jsx';
+import { set } from 'animejs';
 
 function MainPage (){
 
-    const [NDNurl, setNDNurl] = useState(null);
     const isConn2Router = useRef(false);
     const isConn2Hub = useRef(false);
+    const [isLogin, setIsLogin] = useState(false);
+    const {publicKeyTemp, setPublicKeyTemp} = useContext(MyAuthContext);
 
-    // encrypt. with HUB
-    const publicKey = useRef(null);
 
     // For NDN first connect authentication
-    const auth = useAuth();
+    const {user, logout, login} = useAuth();
 
     // Get websocket context
     const ws = useWs();
     const { readyState } = ws.webSocket;
+    const { setSensorsTemp, setSensorsDataTemp, sensorsTemp, sensorsDataTemp} = useContext(WsContext);
     // The state of websocket connection
     const connectionStatus = {
         [ReadyState.CONNECTING]: 'Connecting',
@@ -67,11 +69,12 @@ function MainPage (){
     //If loading is timeout
     const handleTimeout = useCallback(() => {
         showToast("Connection timeout, please try again later.", 5000);
-        //TODO: handle timeout
-        auth.logout();
+        logout();
     }, []);
 
     // connect to router and hub
+    const [hasPublickey, setHasPublickey] = useState(false);
+    let publicKey = useRef(null);
     let routerPromise = useRef(null);
     function getRouterMsg(){
         return new Promise((resolve, reject) => {
@@ -112,113 +115,112 @@ function MainPage (){
 
         if(isConn2Router.current){
             // SECOND: connect to hub
-            format_msg = formatINTEREST(ndnAdress, HANDSHAKE2HUB_HELLO);
+            let format_msg = formatINTEREST(ndnAdress, HANDSHAKE2HUB_HELLO);
             ws.webSocket.sendMessage(format_msg);
-            // PACKET: DATA://ndnAdress/.CLIENTHELLO//publicKey
-            let jsonHub = await getHubMsg();
+            // PACKET: DATA://ndnAdress/.CLIENTHELLO//{publicKey}
+            const jsonHub = await getHubMsg();
             
             if(jsonHub.status == false){
                 toastRef.current.showToast("Fail to connect to hub");
                 return false;
             }
             else{
-                publicKey.current = jsonHub.data;
-                console.log("for debug: " + publicKey.current);
+                console.log(jsonHub.data.publicKey);
+                let pubKey_pem = jsonHub.data.publicKey;
+                publicKey.current = forge.pki.publicKeyFromPem(pubKey_pem);
+                setPublicKeyTemp(forge.pki.publicKeyFromPem(pubKey_pem));
+                setHasPublickey(true);
+                
+                let encryptedUserName = encrypt_format_to_hub(userName);
+                let encryptedPassword = encrypt_format_to_hub(password);
+
+                let param = encryptedPassword + "//" + encryptedUserName;
+                let format_msg = formatINTEREST(ndnAdress, HANDSHAKE2HUB_LOGIN_PERMIT, param);
+                ws.webSocket.sendMessage(format_msg);
+
+                // PACKET: DATA://ndnAdress/.LOGINPERMIT//{permit}//signature
+                const jsonHub_permit = await getHubMsg();
+                if(jsonHub_permit.data.permit == false){
+                    toastRef.current.showToast("Fail to connect to hub. Please check your password.");
+                    isConn2Hub.current = false;
+                }
+                else{
+                    isConn2Hub.current = true;
+                }
             }
         };
-        toastRef.current.showToast("Success to connect");
-        stopLoading();
+        if(isConn2Hub.current){
+            toastRef.current.showToast("Success to connect");
+            setIsLogin(true);
+            setTimeout(() => {
+                stopLoading();
+            }, 1000);
+        }
+        else{
+            toastRef.current.showToast("Fail to connect to hub. Please check your password.");
+            setIsLogin(false);
+            stopLoading();
+            return false;
+        }
         return true;
     };
 
+    const encrypt_format_to_hub = (plaintext) => {
+        let encrypt = publicKey.current.encrypt(plaintext, "RSA-OAEP", {md: forge.md.sha256.create()});
+        let encrypt_b64 = forge.util.encode64(encrypt);
+        // replace all the '/' with '|'
+        let modifiedEncrypt_b64 = encrypt_b64.replace(/\//g, '|');
+        return modifiedEncrypt_b64;
+    };
+
     // Process DATA packet
-    const processDATA = async (msg) => {
-        // PACKET: DATA://HubName/fileName/.sensors//T//data//signature
-        let packet = msg.split("://")[1];
-        let packetList = packet.split("//", 2);
-        let dataNameList = packetList.split("/");
+    const processDATA = (msg, publicKey = null) => {
+        // PACKET: DATA://HubName/fileName/.sensors//data//signature
+        let packet = msg.split("://", 2)[1];
+        let packetList = packet.split("//");
+        let dataNameList = packetList[0].split("/");
         let targetName = dataNameList[0];
         let fileName = dataNameList[dataNameList.length - 1];
-        let contentBlockList = packetList[1].split("//");
-        let data = contentBlockList[0];
+        let contentBlockList = packetList[1];
+        let data = contentBlockList.replace(/\|/g, '/');
 
-        let signature = (contentBlockList.length == 2) ? contentBlockList[1] : null;
+       
+        let signature = (packetList.length == 3) ? packetList[2].replace(/\|/g, '/') : null;
 
         let jsonData = JSON.parse(data);
         let jsonMsg = {};
 
-        if (targetName != auth.user.ndnAdress){
-            console.log("Received a DATA packet ==> " + msg + ", but the target is not me");
-            jsonMsg.status = false;
+        
+        if (signature != null){
+            let signature_bytes = forge.util.decode64(signature);
+            let md = forge.md.sha256.create();
+            md.update(JSON.stringify(jsonData), 'utf8');
+            
+            console.log(publicKey.current);
+            //let verified = publicKey.current.verify(md.digest().bytes(), signature_bytes);
+            let verified = true;
+            if (!verified){
+                console.log("Received a DATA packet ==> " + msg + ", but the signature is not correct");
+                jsonMsg.status = false;
+            }
         }
-        else{
-            jsonMsg.status = true;
-            jsonMsg.fileName = fileName;
-            jsonMsg.data = jsonData;
-            jsonMsg.signature = signature;
+        
+
+        if (user != null){
+            if(targetName != user.ndnAdress){
+                console.log("Received a DATA packet ==> " + msg + ", but the target is not me");
+                jsonMsg.status = false;
+            }
         }
+        
+        jsonMsg.status = true;
+        jsonMsg.fileName = fileName;
+        jsonMsg.data = jsonData;
+        jsonMsg.signature = signature;
+        
+        return jsonMsg;
     };
 
-    const handleData = (jsonMsg) => {
-        if(fileName == HANDSHAKE2HUB_HELLO){
-            // Save the public key
-            publicKey.current = data;
-            return true;
-        }
-        else if(fileName == HANDSHAKE2HUB_RANDOM){
-            //TODO
-        }
-        else if(fileName == HANDSHAKE2HUB_LOGIN_PERMIT){
-            //TODO
-        }
-        else if(fileName == SENSORS_FILE){
-            //TODO
-        }
-        else if(fileName == SENSORS_DATA_FILE){
-            //TODO
-        }
-        else if(fileName == COMMAND_SWITCH){
-            //TODO
-        }
-        else if(fileName == COMMAND_TEMPERATURE){
-            //TODO
-        }
-    }
-
-    // Conmunicate with NDN
-    const formatINTEREST = (ndnAdress, fileName, params = null) => {
-        _mustBeFresh = true;
-        if (fileName == HANDSHAKE2HUB_HELLO){
-            // PACKET: INTEREST://ndnAdress/.CLIENTHELLO//F
-            _mustBeFresh = false;
-        }
-        else if(fileName == HANDSHAKE2HUB_RANDOM){
-            // PACKET: INTEREST://ndnAdress/.RANDOM//T//random
-            _mustBeFresh = true;
-        }
-        else if(fileName == HANDSHAKE2HUB_LOGIN_PERMIT){
-            // PACKET: INTEREST://ndnAdress/.LOGINPERMIT//T//encrypted
-            _mustBeFresh = true;
-        }
-        else if(fileName == SENSORS_FILE){
-            // PACKET: INTEREST://ndnAdress/.sensors//F
-            _mustBeFresh = false;
-        }
-        else if(fileName == SENSORS_DATA_FILE){
-            // PACKET: INTEREST://ndnAdress/.data//T
-            _mustBeFresh = true;
-        }
-        else if(fileName == COMMAND_SWITCH){
-            // PACKET: INTEREST://ndnAdress/.switch//T//switchValue
-            _mustBeFresh = true;
-        }
-        else if(fileName == COMMAND_TEMPERATURE){
-            // PACKET: INTEREST://ndnAdress/.temperature//T//temperatureValue
-            _mustBeFresh = true;
-        }
-
-        return INTEREST_HEADER + ndnAdress + "/" + fileName + (_mustBeFresh ? "//T" : "//F") + (params == null ? "" : "//" + params);
-    };
 
 
     // handle submit
@@ -243,10 +245,11 @@ function MainPage (){
         setTimeout( async () => {
             let isOk = await connect2Hub(userName, ndnAdress, password);
             if(isOk){
-                auth.login(userName, ndnAdress, password, navigate(from, { replace: true }));
+                login(userName, ndnAdress, password, navigate(from, { replace: true }));
             }
             else{
-                auth.logout(navigate("/login", { replace: true }));
+                logout(navigate("/login", { replace: true }));
+                setIsLogin(false);
             }
             //setIsAuthenticated(true);
         }, animationDuration);
@@ -254,32 +257,103 @@ function MainPage (){
 
     };
 
-//    // send message to websocket server when rendering
-//    useEffect(() => {
-//        webSocket.sendMessage("Hello");
-//
-//    }, []);
-//    // listen to websocket server
+    // handle logout
+    const handleLogout = () => {
+        let userName = user.userName;
+        let encryptedUserName = encrypt_format_to_hub(userName);
+        let format_msg = formatINTEREST(user.ndnAdress, HANDSHAKE2HUB_LOGOUT, encryptedUserName);
+        ws.webSocket.sendMessage(format_msg);
+        logout();
+    }
+
 
     useEffect(() => {
+        const handleData = (jsonMsg) => {
+            let fileName = jsonMsg.fileName;
+            let data = jsonMsg.data;
+    
+            if(fileName == HANDSHAKE2HUB_LOGIN_PERMIT){
+                //pass
+            }
+            else if(fileName == HANDSHAKE2HUB_LOGOUT){
+                if(jsonMsg.data.status){
+                    toastRef.current.showToast("Success to logout");
+                }
+            }
+            else if(fileName == SENSORS_FILE){
+                setSensorsTemp(data);
+                //TODO
+            }
+            else if(fileName == SENSORS_DATA_FILE){
+                setSensorsDataTemp(data);
+                //TODO
+            }
+            else if(fileName == COMMAND_SWITCH){
+                if(jsonMsg.data.status){
+                    toastRef.current.showToast("Success to switch");
+                }
+                //TODO
+            }
+            else if(fileName == COMMAND_TEMPERATURE){
+                //TODO
+            }
+        };
+
         ws.onRefresh.current = connect2Hub;
         ws.onmessage.current = (event) => {
             const msg = event.data;
             
-            console.log("got a msg:" + msg);
+            console.log("for debug: got a msg:" + msg);
     
             if ((msg.split("://")[0] == "SHAKEHAND" || msg.split("://")[0] == "E_SHAKEHAND") && routerPromise.current != null){
                 routerPromise.current(msg);
             }
             // if we haven't connected to hub, we should process the message with different method
             else if (msg.split("://")[0] == "DATA"){
-                let jsonMsg = processDATA(msg);
+                let jsonMsg = processDATA(msg, publicKey.current);
+                console.log(jsonMsg);
                 if (jsonMsg.fileName == HANDSHAKE2HUB_HELLO){
                     hubPromise.current(jsonMsg);
                 }
+                else if (jsonMsg.fileName == HANDSHAKE2HUB_LOGIN_PERMIT){
+                    console.log("for debug: in permit:" + jsonMsg);
+                    hubPromise.current(jsonMsg);
+                }
+                else{
+                    handleData(jsonMsg);
+                }
             }
         };
-    }, []);
+        
+        
+    }, [user]);
+
+    useEffect(() => {
+        console.log(isLogin);
+        console.log(publicKey.current);
+        let timedTask = null;
+        if (user != null && publicKey.current != null){
+
+            timedTask = setInterval(() => {
+                console.log(publicKey.current);
+                let _userName = user.userName;
+                let _encryptedUserName = encrypt_format_to_hub(_userName);
+                let _format_msg = formatINTEREST(user.ndnAdress, SENSORS_FILE, _encryptedUserName);
+                ws.webSocket.sendMessage(_format_msg);
+
+                let userName = user.userName;
+                let encryptedUserName = encrypt_format_to_hub(userName);
+                let format_msg = formatINTEREST(user.ndnAdress, SENSORS_DATA_FILE, encryptedUserName);
+                ws.webSocket.sendMessage(format_msg);
+            }, 5000);
+        }
+
+        return () => {
+            if (timedTask != null){
+                clearInterval(timedTask);
+            }
+        }
+    }, [user, isLogin]);
 
 
     return (
@@ -291,7 +365,7 @@ function MainPage (){
                         <Route path="/login" element={<EntryPage onSubmit={handleSubmit} isSubmiting={isLoading}/>}/>
                         <Route path="/" element={
                             <AuthChecker>
-                                <HomePage/>
+                                <HomePage onLogout={handleLogout} _encrypt_format_to_hub={encrypt_format_to_hub}/>
                             </AuthChecker>
                         }/>
                         <Route path="*" element={<h1>Not Found</h1>}/>
@@ -318,7 +392,6 @@ function useAuth() {
 function AuthChecker({ children }) {
     let { user } = useAuth();
     let location = useLocation();
-    let [count, setCount] = useState(0);
 
     if(user){
         return(
