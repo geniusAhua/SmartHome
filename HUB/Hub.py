@@ -199,7 +199,7 @@ class Router:
             # use the private key to decrypt the message
             plainPassword = await self.__formatEncrypt_and_decrypt_to_UTF8(params[0])
             plainUserName = await self.__formatEncrypt_and_decrypt_to_UTF8(params[-1])
-            self.__echo(f"for debug: | {plainPassword} || {plainUserName} |")
+            #self.__echo(f"for debug: | {plainPassword} || {plainUserName} |")
             # check the password and username
             jsonData = {}
             if plainPassword != self.__password:
@@ -268,6 +268,24 @@ class Router:
             )
         ).decode('utf-8')
         return plainText
+
+    async def __formatEncrypt_from_plaintext(self, plainText):
+        plainTextBytes = plainText.encode('utf-8')
+        
+        encryptedBytes = self.__pri_key.encrypt(
+            plainTextBytes,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+
+        encryptedBase64 = base64.b64encode(encryptedBytes)
+
+        formattedEncrypt = encryptedBase64.decode('utf-8').replace('/', '|')
+        
+        return formattedEncrypt
     
     async def __sign_and_formatSignature(self, plainText):
         signature = self.__pri_key.sign(
