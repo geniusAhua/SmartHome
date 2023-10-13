@@ -1,0 +1,27 @@
+.glassmorphism-loading-bord{
+    --b: 0px;
+
+    width: 100%;
+    height: 0px;
+    z-index: 99;
+    position: absolute;
+    top: 0%;
+    background-image: linear-gradient(135deg, rgba(245,247,250,0.2) 0%, rgba(195,207,226,0.3) 100%);
+    backdrop-filter: blur(var(--b));
+    box-shadow: 5px 5px 5px 0 rgba(0,0,0,0.7);
+    justify-content: center;
+}
+
+.wave-container{
+    position: relative;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 50px !important;
+    height: 50px !important;
+}
+
+.wave-container *{
+    width: 100%;
+    height: 100%;
+}
