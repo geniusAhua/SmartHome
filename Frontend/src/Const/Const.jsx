@@ -1,6 +1,6 @@
 
-export const IP = "yujunwei.love"
-export const PORT = "2048"
+export const IP = "xxx.xxx.xxx.xxx"
+export const PORT = ""
 export const SOCKET_URL = `ws://${IP}:${PORT}`
 export const HANDSHAKE2ROUTER_HEADER = "SHAKEHAND://"
 export const INTEREST_HEADER = "INTEREST://"
