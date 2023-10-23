@@ -50,7 +50,7 @@ class Router:
         self.__password = "12345678"
         self.__permitUser = set()
         self.__nodeName = nodeName
-        self.__URL_table = {"router1": "ws://yujunwei.love:2048"}
+        self.__URL_table = {"router1": "ws://xxx.xxx.xxx.xxx:xxx"}
         '''{
                 'WAN':{'targetName': 'webSocket'},
                 'LAN':{'targetName': 'webSocket'}

@@ -28,7 +28,7 @@ class Router:
         # 'targetName': 'websocket'
         # }
         self.__connections = {}
-        self.__port = 2048
+        self.__port = 0 # the port of this router
         self.__CS = CS()
         self.__CS_lock = asyncio.Lock()
         self.__PIT = PIT()
